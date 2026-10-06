@@ -9,6 +9,7 @@ Layout, in dependency order:
 - ``values.py`` -- Python payloads to builtin MLIR attributes (issue 02)
 - ``types.py``  -- Kirin type lattice to the ``!kirin.*`` family (issue 02)
 - ``attrs.py``  -- Kirin attributes to MLIR attributes (issue 02)
+- ``names.py``  -- Kirin names mangled into legal MLIR names (ADR 0002, issue 03)
 - ``prepare.py`` -- the ``PrepareForMLIR`` pass, export preconditions (issue 03)
 - ``emit.py``   -- the ``emit.mlir`` emitter over generic assembly form (issue 03)
 - ``irdl.py``   -- IRDL generation from Kirin ``decl`` metadata (issue 04)
@@ -20,6 +21,7 @@ from .attrs import (
     register_attribute as register_attribute,
     emit_statement_attributes as emit_statement_attributes,
 )
+from .names import PREFIX as PREFIX, NameTable as NameTable, mangle as mangle
 from .types import (
     DIALECT as DIALECT,
     TYPE_SCHEMA as TYPE_SCHEMA,

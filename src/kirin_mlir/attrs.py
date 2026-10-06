@@ -27,14 +27,14 @@ everything else
 
 from __future__ import annotations
 
-from typing import Any
 from collections.abc import Callable
+from typing import Any
 
 from kirin import ir
 from kirin.ir.attrs.types import AnyType, PyClass
 
-from .types import emit_type, is_type_attribute
 from .errors import MLIRExportError
+from .types import emit_type, is_type_attribute
 from .values import emit_python_value
 
 #: Class-keyed handlers, resolved along the MRO. Populated by

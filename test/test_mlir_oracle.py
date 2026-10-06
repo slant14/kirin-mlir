@@ -5,6 +5,8 @@ says what to install, and nothing else in the suite claims to have checked MLIR
 syntax. See ``test/oracle.py`` for what this can and cannot prove at issue 02.
 """
 
+import collections
+
 import pytest
 from kirin import types
 from oracle import (
@@ -14,9 +16,10 @@ from oracle import (
     module_with_types,
     module_with_attributes,
 )
+from kirin_dialects import public_dialects
 from kirin.ir.attrs.types import Union, Vararg, Generic, Literal, FunctionType
 
-from kirin_mlir import emit_type, emit_python_value
+from kirin_mlir import NameTable, emit_type, emit_python_value
 
 pytestmark = pytest.mark.skipif(MLIR_OPT is None, reason=SKIP_REASON)
 
@@ -71,6 +74,35 @@ def test_every_payload_spelling_parses(payload):
     text = module_with_attributes({"a": emit_python_value(payload)})
     result = parses(text)
     assert result.returncode == 0, f"{result.stderr}\n--- input ---\n{text}"
+
+
+def test_every_kirin_name_is_a_legal_irdl_name():
+    """Declare every namespace and operation in one IRDL file; MLIR must load it.
+
+    IRDL checks names when the file is parsed, so this is real MLIR's verdict
+    on every name :class:`NameTable` hands out for the whole of Kirin.
+    """
+    table = NameTable.of(public_dialects())
+    ops = collections.defaultdict(list)
+    for namespace in table.namespaces.values():
+        ops[namespace]  # dialects with no statements still need a legal name
+    for full in table.operations.values():
+        namespace, op = full.split(".", 1)
+        ops[namespace].append(op)
+    text = "".join(
+        f"irdl.dialect @{namespace} {{\n"
+        + "".join(f"  irdl.operation @{op} {{\n  }}\n" for op in sorted(names))
+        + "}\n"
+        for namespace, names in sorted(ops.items())
+    )
+    result = parses(text)
+    assert result.returncode == 0, f"{result.stderr}\n--- input ---\n{text}"
+
+
+def test_irdl_rejects_an_unmangled_kirin_name():
+    """The negative control for the test above, and the reason names.py exists."""
+    result = parses("irdl.dialect @py {\n  irdl.operation @binop.add {\n  }\n}\n")
+    assert result.returncode != 0
 
 
 def test_the_oracle_actually_rejects_something():
