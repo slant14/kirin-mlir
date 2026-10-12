@@ -10,7 +10,7 @@ Layout, in dependency order:
 - ``types.py``  -- Kirin type lattice to the ``!kirin.*`` family (issue 02)
 - ``attrs.py``  -- Kirin attributes to MLIR attributes (issue 02)
 - ``names.py``  -- Kirin names mangled into legal MLIR names (ADR 0002, issue 03)
-- ``prepare.py`` -- the ``PrepareForMLIR`` pass, export preconditions (issue 03)
+- ``prepare.py`` -- export preconditions: typed, closure-free, one module (issue 03)
 - ``emit.py``   -- the ``emit.mlir`` emitter over generic assembly form (issue 03)
 - ``irdl.py``   -- IRDL generation from Kirin ``decl`` metadata (issue 04)
 """
@@ -35,6 +35,10 @@ from .errors import MLIRExportError as MLIRExportError
 from .values import (
     escape_string as escape_string,
     emit_python_value as emit_python_value,
+)
+from .prepare import (
+    PreparedModule as PreparedModule,
+    prepare_for_mlir as prepare_for_mlir,
 )
 
 __version__ = "0.1.0-dev"
