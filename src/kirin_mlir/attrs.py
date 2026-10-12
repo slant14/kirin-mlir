@@ -27,14 +27,15 @@ everything else
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any
+from collections.abc import Callable
 
 from kirin import ir
+from kirin.decl import fields
 from kirin.ir.attrs.types import AnyType, PyClass
 
-from .errors import MLIRExportError
 from .types import emit_type, is_type_attribute
+from .errors import MLIRExportError
 from .values import emit_python_value
 
 #: Class-keyed handlers, resolved along the MRO. Populated by
@@ -88,6 +89,30 @@ def emit_attribute(
         raise err.attach(stmt=stmt, key=key)
 
 
+def emit_statement_attribute(stmt: ir.Statement, key: str, value: ir.Attribute) -> str:
+    """Emit the attribute ``stmt`` holds under ``key``.
+
+    Differs from :func:`emit_attribute` in one case, which needs the
+    statement: a ``PyAttr`` whose declared type is exactly the type the
+    statement's own definition gives ``key``. ``func.func``'s ``slots`` is
+    ``PyAttr(("x", "y"), pytype=tuple[str, ...])`` because its field is
+    declared ``slots: tuple[str, ...] = info.attribute()``. That declared type
+    is not carried by the payload, but it is not lost either: it is part of
+    the operation's definition, which issue 04 generates IRDL from and issue 06
+    imports against. So it is dropped, and only the payload is emitted. A
+    declared type the schema does not account for still goes through
+    :func:`emit_pyattr`, which refuses it.
+    """
+    if isinstance(value, ir.PyAttr):
+        field = fields(type(stmt)).attributes.get(key)
+        if field is not None and value.type == field.type:
+            try:
+                return emit_python_value(value.data)
+            except MLIRExportError as err:
+                raise err.attach(stmt=stmt, key=key)
+    return emit_attribute(value, stmt=stmt, key=key)
+
+
 def emit_statement_attributes(stmt: ir.Statement) -> dict[str, str]:
     """Emit every attribute of one statement, keyed as MLIR will key them.
 
@@ -95,7 +120,7 @@ def emit_statement_attributes(stmt: ir.Statement) -> dict[str, str]:
     that supplies it.
     """
     return {
-        key: emit_attribute(value, stmt=stmt, key=key)
+        key: emit_statement_attribute(stmt, key, value)
         for key, value in stmt.attributes.items()
     }
 

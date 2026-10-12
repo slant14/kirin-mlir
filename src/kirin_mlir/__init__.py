@@ -12,13 +12,21 @@ Layout, in dependency order:
 - ``names.py``  -- Kirin names mangled into legal MLIR names (ADR 0002, issue 03)
 - ``prepare.py`` -- export preconditions: typed, closure-free, one module (issue 03)
 - ``emit.py``   -- the ``emit.mlir`` emitter over generic assembly form (issue 03)
+- ``dialects/`` -- per-dialect ``emit.mlir`` tables, only Kirin ``func`` (issue 03)
 - ``irdl.py``   -- IRDL generation from Kirin ``decl`` metadata (issue 04)
 """
 
+from . import dialects as dialects  # registers the per-dialect emit.mlir tables
+from .emit import (
+    EmitMLIR as EmitMLIR,
+    MLIRFrame as MLIRFrame,
+    emit_mlir as emit_mlir,
+)
 from .attrs import (
     emit_pyattr as emit_pyattr,
     emit_attribute as emit_attribute,
     register_attribute as register_attribute,
+    emit_statement_attribute as emit_statement_attribute,
     emit_statement_attributes as emit_statement_attributes,
 )
 from .names import PREFIX as PREFIX, NameTable as NameTable, mangle as mangle

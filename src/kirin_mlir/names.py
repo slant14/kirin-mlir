@@ -1,6 +1,6 @@
 """Kirin dialect and statement names, mangled into names MLIR accepts.
 
-ADR 0002 decision 1 (proposed). A Kirin statement is named
+ADR 0002 decision 1. A Kirin statement is named
 ``dialect.name + "." + name`` -- ``py.binop.add``, ``stim.gate.SQRT_X`` -- and
 real MLIR refuses both. MLIR 23's IRDL verifier allows only lowercase letters,
 digits and underscores, with no leading underscore and no two in a row (its

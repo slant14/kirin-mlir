@@ -45,11 +45,37 @@ def test_a_type_in_attribute_position_is_the_type_text():
 
 
 def test_dialect_attributes_are_refused_until_a_dialect_registers_them(kernel):
-    """Kirin ``func``'s ``Signature`` belongs to the emitter, in issue 03."""
+    """``Signature`` is registered by ``kirin_mlir.dialects.func`` (issue 03).
+
+    With that registration taken away, the general mapper refuses it: it holds
+    no special case for any dialect.
+    """
     signature = kernel.code.attributes["signature"]
     assert isinstance(signature, func.Signature)
-    with pytest.raises(MLIRExportError, match="no MLIR attribute mapping"):
-        emit_attribute(signature)
+    handler = ATTRIBUTE_HANDLERS.pop(func.Signature)
+    try:
+        with pytest.raises(MLIRExportError, match="no MLIR attribute mapping"):
+            emit_attribute(signature)
+    finally:
+        ATTRIBUTE_HANDLERS[func.Signature] = handler
+
+
+def test_a_schema_declared_type_is_carried_by_the_statement(kernel):
+    """``slots`` declares ``tuple[str, ...]``, exactly as its field does."""
+    slots = kernel.code.attributes["slots"]
+    assert isinstance(slots, ir.PyAttr) and slots.type != types.PyClass(tuple)
+    with pytest.raises(MLIRExportError, match="declares type"):
+        emit_attribute(slots)
+    assert emit_statement_attributes(kernel.code)["slots"] == '["x"]'
+
+
+def test_a_declared_type_the_schema_does_not_give_is_still_refused(kernel):
+    constant = next(
+        stmt for stmt in kernel.callable_region.walk() if stmt.name == "constant"
+    )
+    constant.attributes["value"] = ir.PyAttr(1, pytype=types.Float)
+    with pytest.raises(MLIRExportError, match="declares type"):
+        emit_statement_attributes(constant)
 
 
 def test_a_refusal_names_the_statement_and_the_key(kernel):
