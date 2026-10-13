@@ -698,7 +698,7 @@ xdsl = [
 [package.metadata]
 requires-dist = [
     { name = "bloqade-circuit", marker = "extra == 'stim'", specifier = ">=0.15.3,<0.16" },
-    { name = "kirin-toolchain", specifier = ">=0.22.16,<0.23" },
+    { name = "kirin-toolchain", specifier = ">=0.22.17,<0.23" },
     { name = "stim", marker = "extra == 'stim'", specifier = ">=1.15" },
 ]
 provides-extras = ["stim"]
@@ -715,7 +715,7 @@ xdsl = [{ name = "xdsl", specifier = ">=0.70" }]
 
 [[package]]
 name = "kirin-toolchain"
-version = "0.22.16"
+version = "0.22.20"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beartype" },
@@ -723,9 +723,9 @@ dependencies = [
     { name = "rich" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/85/dc/825a8abad47abd3eb7268060fe90719c61ffdc4246920f2aa20c0b0c24d2/kirin_toolchain-0.22.16.tar.gz", hash = "sha256:c2d308d0f7e229e508a227846db0659c14789057d519572941b7785bd9096eb6", size = 1270477, upload-time = "2026-09-02T15:13:39.247Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a8/1e/cf678178f3ba6d5a99093104c3a2739aef4ca01a634186fa1e38bf9105de/kirin_toolchain-0.22.20.tar.gz", hash = "sha256:6b2108d2693d770944343be31086eac1231e531a701661a442ecabbe7cb1b67f", size = 1293860, upload-time = "2026-10-08T14:34:39.188Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/56/f8/41e0ba5d16a35531d09f90315ac7aee9472adcc76c0ad03896693824772f/kirin_toolchain-0.22.16-py3-none-any.whl", hash = "sha256:afcc09abaf8460858bcc2a42035919dd67ffe49fe242c560613de2a42e5969d9", size = 264250, upload-time = "2026-09-02T15:13:37.324Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/00/afd8e93579d781b10dcdb2c9bc22f47ca05531be34ef09dd46b13e540737/kirin_toolchain-0.22.20-py3-none-any.whl", hash = "sha256:d1b13521b8b883beb17aaea70c53ab6220acbcf53d32deaf681dc323cc2f53a2", size = 273878, upload-time = "2026-10-08T14:34:37.396Z" },
 ]
 
 [[package]]

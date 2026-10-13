@@ -5,10 +5,13 @@ description = "Out-of-tree MLIR interoperability for the Kirin compiler toolchai
 readme = "README.md"
 requires-python = ">= 3.10"
 dependencies = [
-    # 0.22.16 was the latest release on 2026-09-07. Below 0.23 because
+    # At least 0.22.17: before it, type inference paired a statement's fields
+    # with its values position by position, so a group of arguments shifted
+    # every later value onto the wrong field's type, often Bottom (stim's
+    # DETECTOR coordinates; docs/assessment.md, 2026-10-13). Below 0.23 because
     # bloqade-circuit, the stim extra, requires ~=0.22.11, and uv locks every
     # extra together; re-check when bloqade moves to 0.23 (issue 05).
-    "kirin-toolchain>=0.22.16,<0.23",
+    "kirin-toolchain>=0.22.17,<0.23",
 ]
 
 [project.optional-dependencies]
