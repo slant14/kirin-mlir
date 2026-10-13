@@ -59,7 +59,13 @@ def mangle(name: str) -> str:
     return name.replace(".", "_").lower()
 
 
-def _checked(name: str, what: str) -> str:
+def checked(name: str, what: str) -> str:
+    """:func:`mangle`, refusing a result IRDL would reject.
+
+    ``what`` names the thing for the error. Also used by
+    :mod:`kirin_mlir.irdl` for operand, result and parameter names, which IRDL
+    checks by the same rule.
+    """
     mangled = mangle(name)
     if not _LEGAL.fullmatch(mangled):
         raise MLIRExportError(
@@ -104,7 +110,7 @@ class NameTable:
         # Sorted so that, of several problems, the same one is reported first
         # on every run.
         for dialect in sorted(set(dialects), key=lambda d: d.name):
-            namespace = PREFIX + _checked(dialect.name, f"dialect {dialect.name!r}")
+            namespace = PREFIX + checked(dialect.name, f"dialect {dialect.name!r}")
             other = owners.get(namespace)
             if other is not None:
                 raise MLIRExportError(
@@ -116,7 +122,7 @@ class NameTable:
 
             claimed: dict[str, type[ir.Statement]] = {}
             for stmt in dialect.stmts:
-                op = _checked(stmt.name, f"statement {dialect.name}.{stmt.name}")
+                op = checked(stmt.name, f"statement {dialect.name}.{stmt.name}")
                 rival = claimed.get(op)
                 if rival is not None:
                     raise MLIRExportError(

@@ -14,6 +14,8 @@ Layout, in dependency order:
 - ``emit.py``   -- the ``emit.mlir`` emitter over generic assembly form (issue 03)
 - ``dialects/`` -- per-dialect ``emit.mlir`` tables, only Kirin ``func`` (issue 03)
 - ``irdl.py``   -- IRDL generation from Kirin ``decl`` metadata (issue 04)
+- ``discover.py`` -- finding dialects by name, safely (issue 04)
+- ``cli.py``    -- the ``kirin-mlir`` command line (issue 04)
 """
 
 from . import dialects as dialects  # registers the per-dialect emit.mlir tables
@@ -21,6 +23,12 @@ from .emit import (
     EmitMLIR as EmitMLIR,
     MLIRFrame as MLIRFrame,
     emit_mlir as emit_mlir,
+)
+from .irdl import (
+    Exclusion as Exclusion,
+    GeneratedIRDL as GeneratedIRDL,
+    exclusion as exclusion,
+    generate_irdl as generate_irdl,
 )
 from .attrs import (
     emit_pyattr as emit_pyattr,
@@ -48,5 +56,6 @@ from .prepare import (
     PreparedModule as PreparedModule,
     prepare_for_mlir as prepare_for_mlir,
 )
+from .discover import find_dialects as find_dialects
 
 __version__ = "0.1.0-dev"

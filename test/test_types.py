@@ -68,7 +68,9 @@ def test_union_order_does_not_depend_on_the_hash_seed():
     )
     outputs = set()
     for seed in ("0", "1", "12345"):
-        env = dict(os.environ, PYTHONHASHSEED=seed)
+        # The child imports what this process imports, however it found it.
+        path = os.pathsep.join(sys.path)
+        env = dict(os.environ, PYTHONHASHSEED=seed, PYTHONPATH=path)
         result = subprocess.run(
             [sys.executable, "-c", script],
             env=env,

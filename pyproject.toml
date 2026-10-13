@@ -11,6 +11,9 @@ dependencies = [
     "kirin-toolchain>=0.22.16",
 ]
 
+[project.scripts]
+kirin-mlir = "kirin_mlir.cli:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -36,6 +39,11 @@ dev = [
 # Optional: xDSL gives a pure-Python parse/verify loop with no MLIR install.
 # Useful for fast unit tests, but it is a convenience, not the source of truth.
 xdsl = ["xdsl>=0.70"]
+
+[tool.pytest.ini_options]
+# Import from src/ directly. When iCloud Drive syncs this folder it marks .venv
+# hidden, and Python 3.13+ then skips the editable install's .pth file (README).
+pythonpath = ["src"]
 
 [tool.isort]
 profile = "black"

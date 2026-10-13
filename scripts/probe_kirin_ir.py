@@ -52,6 +52,11 @@ def loop(n: int):
     return acc
 
 
+@basic(typeinfer=True)
+def mixed(x: int) -> float:
+    return x + 1.5
+
+
 def result_types(method):
     return [
         str(r.type)
@@ -106,6 +111,30 @@ def main() -> None:
     print(f"  regions  : {len(stmt.regions)}")
     print(f"  attributes: {dict(stmt.attributes)}")
     print(f"  traits   : {sorted(type(t).__name__ for t in stmt.traits)}")
+
+    rule("A TypeVar shared between fields does not mean equal types (2026-10-12)")
+    from kirin.decl import fields
+    from kirin.dialects import py
+
+    add = next(s for s in mixed.callable_region.walk() if isinstance(s, py.binop.Add))
+    schema = fields(py.binop.Add)
+    declared = {
+        n: str(f.type) for n, f in {**schema.std_args, **schema.results}.items()
+    }
+    print(f"  declared: {declared}")
+    print(f"  x + 1.5 : {[str(a.type) for a in add.args]} -> {result_types(mixed)[-1]}")
+    print("-> one shared IRDL variable would reject this; issue 04 uses one per field")
+
+    rule("Fields do not always declare a statement's shape (2026-10-12)")
+    for stmt in (py.tuple.New, py.unpack.Unpack, py.constant.Constant):
+        schema = fields(stmt)
+        handwritten = stmt.__init__.__code__.co_filename != "<string>"
+        print(
+            f"  {stmt.dialect.name}.{stmt.name}: argument fields "
+            f"{list(schema.std_args) + list(schema.kw_args)}, "
+            f"result fields {list(schema.results)}, hand-written __init__ {handwritten}"
+        )
+    print("-> tuple.new takes operands and unpack has results that no field declares")
 
     rule("External registration works (why this package need not fork Kirin)")
     from kirin.dialects import func
