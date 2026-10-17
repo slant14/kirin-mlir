@@ -26,3 +26,6 @@ htmlcov/
 # Scratch
 scratch/
 *.tmp
+
+# Private planning notes
+plans.md
