@@ -11,14 +11,15 @@ import pytest
 
 pytest.importorskip("bloqade.stim", reason="needs the stim extra")
 
-from stim_kernels import EVERY, reference, repetition
+from stim_kernels import EVERY, dialects, reference, repetition
 
 
 @pytest.mark.parametrize("kernel", EVERY, ids=lambda kernel: kernel.sym_name)
 def test_bloqade_turns_each_program_into_a_circuit_stim_can_analyse(kernel):
     circuit = reference(kernel)
-    # Raises unless every detector and observable is deterministic.
-    model = circuit.detector_error_model()
+    # Raises unless every detector and observable is deterministic. The option
+    # only lets PAULI_CHANNEL_2's disjoint errors be modelled as independent.
+    model = circuit.detector_error_model(approximate_disjoint_errors=True)
     assert model.num_detectors == circuit.num_detectors > 0
 
 
@@ -27,12 +28,18 @@ def test_the_noise_reaches_the_error_model():
     assert reference(repetition).detector_error_model().num_errors > 0
 
 
-def test_the_programs_use_four_of_the_five_stim_dialects():
-    """``stim.cf`` is missing: ``REPEAT`` cannot be written under ``@stim.main``."""
+def test_the_programs_use_every_stim_statement():
+    """Issue 05's fourth criterion, before export.
+
+    Walks nested regions too, so the gates inside ``REPEAT`` count. A
+    statement added in a bloqade release fails here until a program uses it.
+    """
+    declared = {f"{d.name}.{stmt.name}" for d in dialects() for stmt in d.stmts}
     used = {
-        stmt.dialect.name
+        f"{stmt.dialect.name}.{stmt.name}"
         for kernel in EVERY
         for stmt in kernel.callable_region.walk()
         if stmt.dialect is not None and stmt.dialect.name.startswith("stim.")
     }
-    assert used == {"stim.aux", "stim.collapse", "stim.gate", "stim.noise"}
+    assert sorted(declared - used) == []
+    assert len(declared) == 53

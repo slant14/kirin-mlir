@@ -29,18 +29,12 @@ from kirin import ir, types
 from oracle import MLIR_OPT, SKIP_REASON, mlir_opt
 from test_irdl import hybrid
 
-from kirin_mlir import (
-    NameTable,
-    emit_mlir,
-    find_dialects,
-    generate_irdl,
-    prepare_for_mlir,
-)
+from kirin_mlir import NameTable, emit_mlir, generate_irdl, prepare_for_mlir
 from kirin_mlir.cli import main
 
 pytest.importorskip("bloqade.stim", reason="needs the stim extra")
 
-from stim_kernels import EVERY, bell
+from stim_kernels import EVERY, bell, dialects
 from bloqade.stim.dialects import gate
 
 needs_mlir = pytest.mark.skipif(MLIR_OPT is None, reason=SKIP_REASON)
@@ -112,10 +106,7 @@ def test_every_statement_reaches_mlir_under_its_own_name(kernel):
 
 def test_only_stim_cf_cannot_be_registered():
     """ADR 0002 decision 2 over all of stim; the rest is what the file covers."""
-    found = find_dialects(["bloqade.stim"])
-    generated = generate_irdl(
-        d for name, d in found.items() if name.startswith("stim.")
-    )
+    generated = generate_irdl(dialects())
     assert [str(e) for e in generated.excluded] == ["stim.cf.REPEAT has a region"]
     assert list(generated.registered) == REGISTRABLE
     # The statements are bloqade's, so the header must say which bloqade.
@@ -150,6 +141,29 @@ def test_every_program_verifies_against_the_stim_irdl(kernel):
     text = emit_mlir(prepare_for_mlir(kernel))
     result = hybrid(text, str(STIM_IRDL), "--verify-roundtrip")
     assert result.returncode == 0, f"{result.stderr}\n--- input ---\n{text}"
+
+
+@needs_mlir
+def test_every_stim_statement_is_verified_by_mlir():
+    """Issue 05's fourth criterion, after export.
+
+    Every statement of stim's five dialects appears in some program that
+    verifies against the checked-in IRDL, counted from ``mlir-opt``'s own
+    printout. ``REPEAT`` is among them, parsed but not verified (ADR 0002).
+    """
+    parsed = set()
+    for kernel in EVERY:
+        result = hybrid(
+            emit_mlir(prepare_for_mlir(kernel)),
+            str(STIM_IRDL),
+            "--mlir-print-op-generic",
+        )
+        assert result.returncode == 0, result.stderr
+        parsed |= set(re.findall(r'"(kirin_stim_[\w.]+)"\(', result.stdout))
+
+    names = NameTable.of(dialects())
+    declared = {names.operation(stmt) for d in dialects() for stmt in d.stmts}
+    assert sorted(declared - parsed) == []
 
 
 def _drop_dagger(module):
