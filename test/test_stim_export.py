@@ -28,8 +28,15 @@ import pytest
 from kirin import ir, types
 from oracle import MLIR_OPT, SKIP_REASON, mlir_opt
 from test_irdl import hybrid
+from test_parse import canonical
 
-from kirin_mlir import NameTable, emit_mlir, generate_irdl, prepare_for_mlir
+from kirin_mlir import (
+    NameTable,
+    emit_mlir,
+    parse_module,
+    generate_irdl,
+    prepare_for_mlir,
+)
 from kirin_mlir.cli import main
 
 pytest.importorskip("bloqade.stim", reason="needs the stim extra")
@@ -141,6 +148,20 @@ def test_every_program_verifies_against_the_stim_irdl(kernel):
     text = emit_mlir(prepare_for_mlir(kernel))
     result = hybrid(text, str(STIM_IRDL), "--verify-roundtrip")
     assert result.returncode == 0, f"{result.stderr}\n--- input ---\n{text}"
+
+
+@needs_mlir
+@pytest.mark.parametrize("kernel", EVERY, ids=ids)
+def test_every_program_reads_back_as_the_same_tree_from_mlir_opt(kernel):
+    """Issue 06's parser on the stim programs, as MLIR prints them verified.
+
+    With the stim IRDL loaded, so the registered operations and the ``REPEAT``
+    region are printed by real ``mlir-opt`` and read back like our own text.
+    """
+    text = emit_mlir(prepare_for_mlir(kernel))
+    printed = hybrid(text, str(STIM_IRDL), "--mlir-print-op-generic")
+    assert printed.returncode == 0, printed.stderr
+    assert canonical(parse_module(printed.stdout)) == canonical(parse_module(text))
 
 
 @needs_mlir

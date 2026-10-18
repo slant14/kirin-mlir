@@ -5,7 +5,10 @@ boundary this is built on, and ``issues/`` for the ordered work items.
 
 Layout, in dependency order:
 
-- ``errors.py`` -- ``MLIRExportError``, the one refusal (issue 02)
+- ``errors.py`` -- ``MLIRExportError`` and ``MLIRImportError``, the refusals
+  out and in (issues 02, 06)
+- ``parse.py``  -- MLIR generic form read back into a plain tree, the first
+  stage of the import (issue 06)
 - ``values.py`` -- Python payloads to builtin MLIR attributes (issue 02)
 - ``types.py``  -- Kirin type lattice to the ``!kirin.*`` family (issue 02)
 - ``attrs.py``  -- Kirin attributes to MLIR attributes (issue 02)
@@ -38,6 +41,11 @@ from .attrs import (
     emit_statement_attributes as emit_statement_attributes,
 )
 from .names import PREFIX as PREFIX, NameTable as NameTable, mangle as mangle
+from .parse import (
+    parse_type as parse_type,
+    parse_module as parse_module,
+    parse_attribute as parse_attribute,
+)
 from .types import (
     DIALECT as DIALECT,
     TYPE_SCHEMA as TYPE_SCHEMA,
@@ -47,7 +55,10 @@ from .types import (
     pyclass_type as pyclass_type,
     qualified_name as qualified_name,
 )
-from .errors import MLIRExportError as MLIRExportError
+from .errors import (
+    MLIRExportError as MLIRExportError,
+    MLIRImportError as MLIRImportError,
+)
 from .values import (
     escape_string as escape_string,
     emit_python_value as emit_python_value,

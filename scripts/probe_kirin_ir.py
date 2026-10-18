@@ -170,6 +170,18 @@ def main() -> None:
     )
     print("-> before 0.22.17 the 2 was paired with label's type: Bottom (issue 05)")
 
+    rule("What structural equality compares that the export drops (2026-10-18)")
+    copy = typed.similar()
+    print(f"  typed.arg_names: {typed.arg_names}")
+    print(f"  equal to its own copy: {typed.is_structurally_equal(copy)}")
+    copy.arg_names = ["typed_self", *typed.arg_names[1:]]
+    print(f"  equal after renaming only %self: {typed.is_structurally_equal(copy)}")
+    print(
+        f"  a kernel held by py.constant is typed {py.constant.Constant(typed).value.type}"
+    )
+    print(f"  PyAttr(1) == PyAttr(1, Any): {ir.PyAttr(1) == ir.PyAttr(1, types.Any)}")
+    print("-> the import must rebuild what the text does not say (issue 06, step 0)")
+
     rule("External registration works (why this package need not fork Kirin)")
     from kirin.dialects import func
 

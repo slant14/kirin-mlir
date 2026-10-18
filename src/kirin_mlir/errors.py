@@ -1,4 +1,4 @@
-"""The single error this package raises when Kirin IR cannot cross into MLIR.
+"""The errors this package raises when IR cannot cross between Kirin and MLIR.
 
 The rule from ``docs/adr/0001-mlir-interop.md`` is that unrepresentable input
 **raises** rather than being widened or boxed opaquely. Silent widening produces
@@ -6,11 +6,15 @@ MLIR that verifies while meaning something different from the Kirin program it
 came from, which is a silent failure in the one place this project exists to be
 trustworthy.
 
-The mapping functions in :mod:`kirin_mlir.types` and :mod:`kirin_mlir.values`
-see a bare lattice type or a bare Python payload; they do not know which
-statement or which attribute key it came from. The caller does. So the error
-carries optional ``stmt`` and ``key`` slots that an outer frame fills in on the
-way out -- see :func:`kirin_mlir.attrs.emit_statement_attributes`.
+:class:`MLIRExportError` is the one refusal on the way out. The mapping
+functions in :mod:`kirin_mlir.types` and :mod:`kirin_mlir.values` see a bare
+lattice type or a bare Python payload; they do not know which statement or
+which attribute key it came from. The caller does. So the error carries
+optional ``stmt`` and ``key`` slots that an outer frame fills in on the way out
+-- see :func:`kirin_mlir.attrs.emit_statement_attributes`.
+
+:class:`MLIRImportError` is the one refusal on the way in (issue 06). Its input
+is text, so it says where in the text: a line and a column.
 """
 
 from __future__ import annotations
@@ -71,6 +75,25 @@ class MLIRExportError(Exception):
         if where:
             return f"{self.message} [in {', '.join(where)}]"
         return self.message
+
+
+class MLIRImportError(Exception):
+    """Raised when MLIR text cannot be read back into Kirin faithfully.
+
+    Args:
+        message: what could not be read, and why.
+        line: the 1-based line of the text it was found on, if known.
+        column: the 1-based column, if known.
+    """
+
+    def __init__(
+        self, message: str, *, line: int | None = None, column: int | None = None
+    ) -> None:
+        self.message = message
+        self.line = line
+        self.column = column
+        where = "" if line is None else f"line {line}, column {column}: "
+        super().__init__(where + message)
 
 
 def _stmt_name(stmt: Any) -> str:
