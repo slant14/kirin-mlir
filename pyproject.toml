@@ -2,7 +2,8 @@
 name = "kirin-mlir"
 version = "0.1.0-dev"
 description = "Out-of-tree MLIR interoperability for the Kirin compiler toolchain."
-readme = "README.md"
+# No `readme`: README.md is not tracked, and hatchling refuses to build when
+# the file it names is missing, so a fresh clone could not be installed.
 requires-python = ">= 3.10"
 dependencies = [
     # At least 0.22.17: before it, type inference paired a statement's fields
