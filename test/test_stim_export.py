@@ -29,7 +29,7 @@ from kirin import ir, types
 from oracle import MLIR_OPT, SKIP_REASON, mlir_opt
 from test_irdl import hybrid
 from test_parse import canonical, operations
-from test_import import assert_types_and_attributes_read_back
+from test_import import rebuilt, assert_rebuilt, assert_types_and_attributes_read_back
 
 from kirin_mlir import (
     NameTable,
@@ -269,3 +269,16 @@ def test_every_stim_type_and_attribute_reads_back(kernel, printed):
         assert result.returncode == 0, result.stderr
         text = result.stdout
     assert_types_and_attributes_read_back(module, parse_module(text))
+
+
+@pytest.mark.parametrize("printed", [False, pytest.param(True, marks=needs_mlir)])
+@pytest.mark.parametrize("kernel", EVERY, ids=ids)
+def test_every_stim_program_is_rebuilt_as_its_prepared_copy(kernel, printed):
+    """Issue 06 step 4, ``REPEAT``'s region and its terminator-less block too."""
+    module = prepare_for_mlir(kernel)
+    text = emit_mlir(module)
+    if printed:
+        result = hybrid(text, str(STIM_IRDL), "--mlir-print-op-generic")
+        assert result.returncode == 0, result.stderr
+        text = result.stdout
+    assert_rebuilt(module, rebuilt(module, text))

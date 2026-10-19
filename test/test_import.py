@@ -10,11 +10,19 @@ printout, and requires each attribute, operand type, result type and block
 argument type to import to what the prepared copy holds. The rest checks what
 the corpus does not reach: each kind of type and payload, the two losses the
 export makes on purpose, and the refusals.
+
+Step 4 rebuilds statements, blocks and regions. Each kernel of the corpus,
+again from both writers, must come back structurally equal to its prepared
+copy by Kirin's own ``is_structurally_equal``, with what that does not
+compare checked as well: the operands each argument field reads, result
+types, the statement's own state, every reverse-use link (Kirin issue #707),
+and Kirin's ``verify``. Small hand-written modules check forward references,
+scoping, successors and the refusals.
 """
 
 import sys
 import struct
-from collections import Counter
+from collections import Counter, defaultdict
 
 import pytest
 from kirin import ir, types
@@ -22,6 +30,7 @@ from oracle import MLIR_OPT, SKIP_REASON
 from test_irdl import CORPUS
 from kirin.decl import info, statement
 from test_parse import PAYLOADS, generic, operations
+from kirin.prelude import basic
 from kirin.dialects import py, func, ilist
 from kirin.ir.attrs.types import (
     Union,
@@ -37,6 +46,7 @@ from kirin_mlir import (
     TYPE_SCHEMA,
     TYPE_IMPORTERS,
     NameTable,
+    MLIRImporter,
     MLIRImportError,
     emit_mlir,
     emit_type,
@@ -53,6 +63,7 @@ from kirin_mlir import (
     import_statement_attributes,
 )
 from kirin_mlir.emit import SEGMENT_SIZES
+from kirin_mlir.import_ import STATEMENT_IMPORTS
 
 needs_mlir = pytest.mark.skipif(MLIR_OPT is None, reason=SKIP_REASON)
 
@@ -399,3 +410,298 @@ def test_a_kernel_takes_its_declared_type_or_its_signature():
     assert value == ir.PyAttr(
         kernel, FunctionType(kernel.arg_types, kernel.return_type)
     )
+
+
+# -- step 4: statements, blocks and regions, over the corpus -----------------
+
+
+def rebuilt(module, text: str) -> list[ir.Statement]:
+    """The statements ``text`` holds, read back for ``module``'s dialects."""
+    symbols = {module.symbol(source): source for source in module.sources}
+    importer = MLIRImporter(NameTable.of(module.dialects), symbols)
+    return importer.module(parse_module(text))
+
+
+def operand_groups(stmt: ir.Statement) -> dict[str, int | tuple[int, ...]]:
+    """The operand positions each argument field reads.
+
+    Not ``_name_args_slice`` itself: Kirin's hand-written ``scf`` constructors
+    record a trailing group as ``slice(1, None)`` and generated ones as
+    ``slice(1, 3)``. Both read the same operands, and the text cannot say
+    which constructor built the original.
+    """
+    positions = tuple(range(len(stmt.args)))
+    return {name: positions[index] for name, index in stmt._name_args_slice.items()}
+
+
+def assert_use_links(stmt: ir.Statement) -> None:
+    """Each value's reverse uses are exactly the operands that read it."""
+    readers = defaultdict(set)
+    defined = set()
+    for node in stmt.walk():
+        defined.update(node.results)
+        for region in node.regions:
+            for block in region.blocks:
+                defined.update(block.args)
+        for index, arg in enumerate(node.args):
+            assert not isinstance(arg, ir.TestValue), "a placeholder was left"
+            readers[arg].add((node, index))
+    assert readers.keys() <= defined, "an operand is defined outside the kernel"
+    for value in defined:
+        assert {(use.stmt, use.index) for use in value.uses} == readers[value]
+
+
+def assert_rebuilt(module, statements: list[ir.Statement]) -> None:
+    """``statements`` are ``module``'s prepared kernels, rebuilt."""
+    assert len(statements) == len(module.methods)
+    for stmt, method in zip(statements, module.methods):
+        assert stmt.is_structurally_equal(method.code)
+        assert_use_links(stmt)
+        self_arg, prepared_self = (
+            code.body.blocks[0].args[0] for code in (stmt, method.code)
+        )
+        assert self_arg.name == prepared_self.name
+        for imported, prepared in zip(stmt.walk(), method.code.walk(), strict=True):
+            assert operand_groups(imported) == operand_groups(prepared)
+            assert [r.type for r in imported.results] == [
+                r.type for r in prepared.results
+            ]
+            assert vars(imported).keys() == vars(prepared).keys()
+            imported.verify()
+            imported.verify_type()
+
+
+@pytest.mark.parametrize("write", WRITERS)
+@pytest.mark.parametrize("kernel", CORPUS, ids=ids)
+def test_every_kernel_is_rebuilt_as_its_prepared_copy(kernel, write):
+    module = prepare_for_mlir(kernel)
+    assert_rebuilt(module, rebuilt(module, write(emit_mlir(module))))
+
+
+def test_func_func_is_the_one_statement_with_an_import_hook():
+    """The import's one exception, as ``func.func`` is the emitter's."""
+    assert STATEMENT_IMPORTS.keys() == {func.Function}
+
+
+# -- step 4: hand-written modules ---------------------------------------------
+
+
+@statement(dialect=declarations)
+class Scope(ir.Statement):
+    """A region and nothing else, for the scoping tests."""
+
+    name = "scope"
+    body: ir.Region = info.region()
+
+
+@statement(dialect=declarations)
+class Groups(ir.Statement):
+    """One operand, then two groups, so it carries ``operandSegmentSizes``."""
+
+    name = "groups"
+    first: ir.SSAValue = info.argument()
+    xs: tuple[ir.SSAValue, ...] = info.argument()
+    ys: tuple[ir.SSAValue, ...] = info.argument()
+
+
+TABLE = NameTable.of([*basic.data, declarations])
+INT = '!kirin.pyclass<"builtins.int">'
+CONSTANT = f'%c = "kirin_py_constant.constant"() {{value = 1 : i64}} : () -> {INT}'
+
+
+def add(lhs: str, rhs: str, typ: str = INT) -> str:
+    return f'%s = "kirin_py_binop.add"({lhs}, {rhs}) : ({typ}, {typ}) -> {INT}'
+
+
+def scope(*lines: str) -> list[str]:
+    return ['"kirin_test_import.scope"() ({', *lines, "}) : () -> ()"]
+
+
+def groups(operands: str, sizes: str | None) -> str:
+    """A ``Groups`` statement; ``sizes`` is its ``operandSegmentSizes``, if any."""
+    types_ = ", ".join(INT for _ in operands.split(", "))
+    entries = f" {{operandSegmentSizes = {sizes}}}" if sizes else ""
+    return f'"kirin_test_import.groups"({operands}){entries} : ({types_}) -> ()'
+
+
+def module_text(*lines: str) -> str:
+    """A ``builtin.module`` holding ``lines``, the first of them on line 2."""
+    body = "".join(f"  {line}\n" for line in lines)
+    return f'"builtin.module"() ({{\n{body}}}) : () -> ()\n'
+
+
+def rebuild(*lines: str) -> list[ir.Statement]:
+    return MLIRImporter(TABLE).module(parse_module(module_text(*lines)))
+
+
+def test_a_value_may_be_used_before_its_definition():
+    plus, one = rebuild(add("%c", "%c"), CONSTANT)
+    assert tuple(plus.args) == (one.result, one.result)
+    assert {(use.stmt, use.index) for use in one.result.uses} == {
+        (plus, 0),
+        (plus, 1),
+    }
+
+
+@pytest.mark.parametrize("before", [True, False], ids=["defined first", "used first"])
+def test_a_nested_region_sees_the_values_around_it(before):
+    inner = scope(add("%c", "%c"))
+    lines = [CONSTANT, *inner] if before else [*inner, CONSTANT]
+    statements = rebuild(*lines)
+    one = statements[0] if before else statements[1]
+    region = statements[1] if before else statements[0]
+    (plus,) = region.body.blocks[0].stmts
+    assert tuple(plus.args) == (one.result, one.result)
+
+
+def test_a_successor_may_name_a_later_block_of_its_region():
+    (outer,) = rebuild(
+        *scope(
+            "^bb0:",
+            '  "kirin_cf.br"() [^bb1] : () -> ()',
+            "^bb1:",
+            '  "kirin_cf.br"() [^bb0] : () -> ()',
+        )
+    )
+    first, second = outer.body.blocks
+    assert first.last_stmt.successors == [second]
+    assert second.last_stmt.successors == [first]
+
+
+def test_operand_groups_follow_operand_segment_sizes():
+    (stmt,) = rebuild(*scope(CONSTANT, groups("%c, %c, %c", "array<i32: 1, 0, 2>")))
+    _, rebuilt_groups = stmt.body.blocks[0].stmts
+    assert rebuilt_groups._name_args_slice == {
+        "first": 0,
+        "xs": slice(1, 1),
+        "ys": slice(1, 3),
+    }
+    assert rebuilt_groups.xs == () and len(rebuilt_groups.ys) == 2
+    assert SEGMENT_SIZES not in rebuilt_groups.attributes
+
+
+INT3 = f"({INT}, {INT}, {INT})"
+#: Each case: the module's lines, what the refusal says, and the line it names.
+REFUSALS = {
+    "use without definition": ([add("%c", "%c")], "%c is used but never defined", 2),
+    "definition twice": ([CONSTANT, CONSTANT], "defined twice", 3),
+    "use of another type": (
+        [CONSTANT, add("%c", "%c", "!kirin.any")],
+        r"used as AnyType\(\) and defined as",
+        3,
+    ),
+    "use before definition of another type": (
+        [add("%c", "%c", "!kirin.any"), CONSTANT],
+        r"used as AnyType\(\) and defined as",
+        3,
+    ),
+    "two uses of different types": (
+        [add("%c", "%c", "!kirin.any"), add("%c", "%c").replace("%s", "%t", 1)],
+        "used before as",
+        3,
+    ),
+    "use outside its region": (
+        [*scope(CONSTANT), add("%c", "%c")],
+        "never defined",
+        5,
+    ),
+    "definition in a nested region": (
+        [add("%c", "%c"), *scope(CONSTANT)],
+        "outside the region that defines",
+        4,
+    ),
+    "no such block": (
+        scope("^bb0:", '  "kirin_cf.br"() [^bb7] : () -> ()'),
+        "names no block",
+        4,
+    ),
+    "a block of another region": (
+        [*scope("^bb0:", f"  {CONSTANT}"), *scope('"kirin_cf.br"() [^bb0] : () -> ()')],
+        "names no block",
+        7,
+    ),
+    "a block of an enclosing region": (
+        scope(
+            "^bb0:",
+            *(f"  {line}" for line in scope('"kirin_cf.br"() [^bb0] : () -> ()')),
+        ),
+        "names no block",
+        5,
+    ),
+    "a label twice": (scope("^bb0:", "^bb0:"), "defined twice in one region", 4),
+    "segment sizes missing": ([CONSTANT, groups("%c", None)], "is missing", 3),
+    "segment sizes not needed": (
+        [
+            CONSTANT,
+            (
+                f'%s = "kirin_py_binop.add"(%c, %c) '
+                f"{{operandSegmentSizes = array<i32: 1, 1>}} : ({INT}, {INT}) -> {INT}"
+            ),
+        ],
+        "written only for",
+        3,
+    ),
+    "segment sizes of i64": (
+        [CONSTANT, groups("%c", "array<i64: 1, 0, 0>")],
+        "must be an array<i32",
+        3,
+    ),
+    "segment sizes too few": (
+        [CONSTANT, groups("%c", "array<i32: 1, 0>")],
+        "has 2 entries",
+        3,
+    ),
+    "segment sizes over a single operand": (
+        [CONSTANT, groups("%c, %c", "array<i32: 2, 0, 0>")],
+        "gives the field 'first' 2",
+        3,
+    ),
+    "segment sizes over the operands": (
+        [CONSTANT, groups("%c, %c", "array<i32: 1, 1, 1>")],
+        "take 3 operands, and the operation has 2",
+        3,
+    ),
+    "operands over the fields": (
+        [CONSTANT, f'%s = "kirin_py_binop.add"(%c, %c, %c) : {INT3} -> {INT}'],
+        "take 2 operands, and the operation has 3",
+        3,
+    ),
+    "results under the fields": (
+        [CONSTANT, f'"kirin_py_binop.add"(%c, %c) : ({INT}, {INT}) -> ()'],
+        "declares 1 result",
+        3,
+    ),
+    "a property": (
+        [f'%c = "kirin_py_constant.constant"() <{{value = 1 : i64}}> : () -> {INT}'],
+        "property",
+        2,
+    ),
+    "a func.func with no block": (
+        [
+            (
+                '%f = "kirin_func.func"() ({\n  }) {sym_name = "f", slots = [], '
+                "signature = () -> (!kirin.any)} : () -> !kirin.anymethod"
+            )
+        ],
+        "no entry block",
+        2,
+    ),
+    "an unknown name": (
+        ['"kirin_py_binop.nope"() : () -> ()'],
+        "names no statement",
+        2,
+    ),
+}
+
+
+@pytest.mark.parametrize("lines, reason, line", REFUSALS.values(), ids=list(REFUSALS))
+def test_ir_the_exporter_never_writes_is_refused_with_its_line(lines, reason, line):
+    with pytest.raises(MLIRImportError, match=reason) as caught:
+        rebuild(*lines)
+    assert caught.value.line == line
+
+
+def test_a_module_is_one_region_of_one_block():
+    text = '"builtin.module"() ({\n^bb0(%a: !kirin.any):\n}) : () -> ()\n'
+    with pytest.raises(MLIRImportError, match="one region of one block"):
+        MLIRImporter(TABLE).module(parse_module(text))

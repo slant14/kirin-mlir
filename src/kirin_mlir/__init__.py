@@ -18,6 +18,8 @@ Layout, in dependency order:
 - ``prepare.py`` -- export preconditions: typed, closure-free, one module (issue 03)
 - ``emit.py``   -- the ``emit.mlir`` emitter over generic assembly form (issue 03)
 - ``dialects/`` -- per-dialect ``emit.mlir`` tables, only Kirin ``func`` (issue 03)
+- ``import_.py`` -- the parsed tree back into Kirin statements, blocks and
+  regions, the second stage of the import (issue 06)
 - ``irdl.py``   -- IRDL generation from Kirin ``decl`` metadata (issue 04)
 - ``discover.py`` -- finding dialects by name, safely (issue 04)
 - ``cli.py``    -- the ``kirin-mlir`` command line (issue 04)
@@ -71,6 +73,10 @@ from .values import (
     escape_string as escape_string,
     emit_python_value as emit_python_value,
     import_python_value as import_python_value,
+)
+from .import_ import (
+    MLIRImporter as MLIRImporter,
+    register_statement_import as register_statement_import,
 )
 from .prepare import (
     PreparedModule as PreparedModule,

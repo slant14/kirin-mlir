@@ -11,7 +11,8 @@ the registration is in place before anything is emitted.
     left out of the emitted entry block, so the block's arguments line up with
     the ``signature`` attribute. That is only sound if nothing reads it, so a
     function that still reads ``%self`` is refused here, by name, rather than
-    reaching ``mlir-opt`` as an undeclared value.
+    reaching ``mlir-opt`` as an undeclared value. The import puts it back
+    (:func:`restore_self`), read off the signature.
 
 ``func.lambda`` is refused
     A closure reads its captures through its own ``%self``.
@@ -30,13 +31,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from kirin import interp
+from kirin import ir, types, interp
 from kirin.dialects import func
 
 from .. import parse
 from ..attrs import register_attribute, register_attribute_import
 from ..types import emit_type, import_type
 from ..errors import MLIRExportError, MLIRImportError
+from ..import_ import register_statement_import
 
 if TYPE_CHECKING:
     from ..emit import EmitMLIR, MLIRFrame
@@ -64,6 +66,27 @@ def import_signature(attr: parse.Attribute) -> func.Signature:
         inputs=tuple(map(import_type, attr.type.inputs)),
         output=import_type(attr.type.results[0]),
     )
+
+
+@register_statement_import(func.Function)
+def restore_self(node: func.Function) -> None:
+    """Put back the ``%self`` argument :meth:`FuncMLIREmit.function` dropped.
+
+    Its type is the function's own, read off the signature as Kirin's
+    ``Method.self_type`` reads it, and its name hint is ``<sym_name>_self``,
+    as Kirin's lowering names it. Nothing in the body uses it: the export
+    refused a function that did.
+    """
+    blocks = node.body.blocks
+    if not blocks:
+        raise MLIRImportError(
+            f"func.func {node.sym_name!r} has no entry block to put %self back in"
+        )
+    signature = node.signature
+    self_type = types.FunctionType(signature.inputs, signature.output)
+    name = f"{node.sym_name}_self"
+    valid = ir.SSAValue.name_pattern.fullmatch(name)
+    blocks[0].args.insert_from(0, self_type, name if valid else None)
 
 
 @func.dialect.register(key="emit.mlir")
