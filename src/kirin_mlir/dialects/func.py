@@ -23,7 +23,7 @@ the registration is in place before anything is emitted.
     attribute position, ``(!kirin.pyclass<"builtins.int">) -> (...)``: the
     obvious candidate named in issue 03, and one ``mlir-opt`` parses. It keeps
     Kirin's key, ``signature``, so the import direction (issue 06) needs no
-    renaming table.
+    renaming table, and :func:`import_signature` reads it back.
 """
 
 from __future__ import annotations
@@ -33,9 +33,10 @@ from typing import TYPE_CHECKING
 from kirin import interp
 from kirin.dialects import func
 
-from ..attrs import register_attribute
-from ..types import emit_type
-from ..errors import MLIRExportError
+from .. import parse
+from ..attrs import register_attribute, register_attribute_import
+from ..types import emit_type, import_type
+from ..errors import MLIRExportError, MLIRImportError
 
 if TYPE_CHECKING:
     from ..emit import EmitMLIR, MLIRFrame
@@ -45,6 +46,24 @@ if TYPE_CHECKING:
 def emit_signature(attr: func.Signature) -> str:
     inputs = ", ".join(emit_type(typ) for typ in attr.inputs)
     return f"({inputs}) -> ({emit_type(attr.output)})"
+
+
+@register_attribute_import(func.Signature)
+def import_signature(attr: parse.Attribute) -> func.Signature:
+    """The ``Signature`` :func:`emit_signature` wrote: its inverse."""
+    if not (
+        isinstance(attr, parse.TypeAttr)
+        and isinstance(attr.type, parse.FunctionType)
+        and len(attr.type.results) == 1
+    ):
+        raise MLIRImportError(
+            "a signature is written as a function type with one result, "
+            "(inputs) -> (output)"
+        )
+    return func.Signature(
+        inputs=tuple(map(import_type, attr.type.inputs)),
+        output=import_type(attr.type.results[0]),
+    )
 
 
 @func.dialect.register(key="emit.mlir")

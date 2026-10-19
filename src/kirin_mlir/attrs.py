@@ -23,20 +23,26 @@ everything else
     per-dialect behaviour. :func:`register_attribute` is that door. Keeping a
     general mapper free of imports from particular dialects is what lets this
     package emit dialects it has never seen.
+
+The way back (issue 06) is :func:`import_statement_attribute`. The text does
+not say which Kirin attribute class it was written from; the statement's
+field declaration does, so every attribute is read against it, and a dialect
+attribute class gets its importer through :func:`register_attribute_import`.
 """
 
 from __future__ import annotations
 
-from typing import Any
-from collections.abc import Callable
+from typing import Any, get_origin
+from collections.abc import Mapping, Callable
 
 from kirin import ir
 from kirin.decl import fields
-from kirin.ir.attrs.types import AnyType, PyClass
+from kirin.ir.attrs.types import AnyType, PyClass, FunctionType, TypeAttribute
 
-from .types import emit_type, is_type_attribute
-from .errors import MLIRExportError
-from .values import emit_python_value
+from . import parse
+from .types import emit_type, import_type, is_type_attribute
+from .errors import MLIRExportError, MLIRImportError
+from .values import emit_python_value, import_python_value
 
 #: Class-keyed handlers, resolved along the MRO. Populated by
 #: :func:`register_attribute`.
@@ -167,3 +173,136 @@ def emit_attribute_fallback(attr: ir.Attribute) -> str:
         "with kirin_mlir.attrs.register_attribute if this dialect's attribute "
         "has a faithful MLIR spelling"
     )
+
+
+# -- the way back (issue 06) --------------------------------------------------
+
+#: Importers for dialect attribute classes, keyed by the class a statement
+#: field declares and resolved along its MRO. Populated by
+#: :func:`register_attribute_import`.
+ATTRIBUTE_IMPORTERS: dict[type, Callable[[parse.Attribute], ir.Attribute]] = {}
+
+
+def register_attribute_import(
+    cls: type,
+) -> Callable[[Callable[[parse.Attribute], ir.Attribute]], Callable]:
+    """Register an importer for a Kirin attribute class.
+
+    The inverse of :func:`register_attribute`: a dialect that registers how
+    its attribute is written registers here how it is read back.
+    """
+
+    def wrapper(
+        fn: Callable[[parse.Attribute], ir.Attribute],
+    ) -> Callable[[parse.Attribute], ir.Attribute]:
+        ATTRIBUTE_IMPORTERS[cls] = fn
+        return fn
+
+    return wrapper
+
+
+def import_statement_attribute(
+    stmt: type[ir.Statement],
+    key: str,
+    attr: parse.Attribute,
+    symbols: Mapping[str, ir.Method] | None = None,
+) -> ir.Attribute:
+    """The attribute a ``stmt`` held under ``key``, read back from ``attr``.
+
+    The inverse of :func:`emit_statement_attribute`, and read against the
+    statement's declaration as that function wrote against it:
+
+    - A field declared with a Python type (``slots: tuple[str, ...]``) gets
+      ``PyAttr(payload, declared type)``, as the statement's generated
+      ``__init__`` builds it. The declared type decides ``tuple`` or
+      ``list``, ``bytes`` or ``bytearray``.
+    - A field declared ``PyAttr`` or ``Data`` (``py.constant``'s ``value``)
+      gets ``PyAttr(payload)``, typed by its payload as ``PyAttr`` types it.
+    - A field declared as a ``TypeAttribute`` gets the type.
+    - A field declared as any other attribute class gets the importer
+      registered for it: Kirin ``func``'s ``Signature`` has one, in
+      :mod:`kirin_mlir.dialects.func`.
+
+    A kernel, written ``@symbol``, is looked up in ``symbols``. A field
+    declared with a Python type gives it that type (``func.invoke``'s
+    ``callee``). Under ``Data`` it gets ``FunctionType(arg_types,
+    return_type)``, the rule Kirin's ``py.Constant`` uses (issue 06, step 0,
+    decision 7).
+
+    Raises:
+        MLIRImportError: naming ``stmt`` and ``key``, if the statement
+            declares no such attribute or ``attr`` is not what the exporter
+            writes for the declaration.
+    """
+    try:
+        field = fields(stmt).attributes.get(key)
+        if field is None:
+            raise MLIRImportError(
+                "the statement declares no attribute by that name, and the "
+                "import reads every attribute against its declaration"
+            )
+        if field.pytype:
+            return ir.PyAttr(_payload(attr, field.type, symbols), field.type)
+
+        declared = get_origin(field.annotation) or field.annotation
+        for cls in declared.__mro__:
+            importer = ATTRIBUTE_IMPORTERS.get(cls)
+            if importer is not None:
+                return importer(attr)
+        if declared in (ir.Data, ir.PyAttr):
+            payload = _payload(attr, AnyType(), symbols)
+            if isinstance(payload, ir.Method):
+                kernel = FunctionType(payload.arg_types, payload.return_type)
+                return ir.PyAttr(payload, kernel)
+            return ir.PyAttr(payload)
+        if issubclass(declared, TypeAttribute):
+            if not isinstance(attr, parse.TypeAttr):
+                raise MLIRImportError("the field declares a type, and none was found")
+            typ = import_type(attr.type)
+            if not isinstance(typ, declared):
+                raise MLIRImportError(
+                    f"the field declares a {declared.__name__}, and "
+                    f"{type(typ).__name__} was found"
+                )
+            return typ
+        raise MLIRImportError(
+            f"no import mapping for {declared.__name__}; register one with "
+            "kirin_mlir.attrs.register_attribute_import, as for its export"
+        )
+    except MLIRImportError as err:
+        raise err.attach(stmt=stmt, key=key)
+
+
+def import_statement_attributes(
+    stmt: type[ir.Statement],
+    entries: Mapping[str, parse.Attribute],
+    symbols: Mapping[str, ir.Method] | None = None,
+) -> dict[str, ir.Attribute]:
+    """Every attribute of one ``stmt``, read back from its dictionary.
+
+    The inverse of :func:`emit_statement_attributes`. ``operandSegmentSizes``
+    is not an attribute of the statement, so the caller removes it first.
+    """
+    return {
+        key: import_statement_attribute(stmt, key, attr, symbols)
+        for key, attr in entries.items()
+    }
+
+
+def _payload(
+    attr: parse.Attribute,
+    hint: TypeAttribute,
+    symbols: Mapping[str, ir.Method] | None,
+) -> Any:
+    """A ``PyAttr``'s payload: a kernel for ``@symbol``, else a Python value."""
+    if not isinstance(attr, parse.SymbolRefAttr):
+        return import_python_value(attr, hint)
+    if attr.nested:
+        raise MLIRImportError(
+            f"@{attr.root} is a nested symbol reference; the exporter writes a "
+            "kernel as a flat @symbol"
+        )
+    method = (symbols or {}).get(attr.root)
+    if method is None:
+        raise MLIRImportError(f"@{attr.root} names no kernel of the module")
+    return method

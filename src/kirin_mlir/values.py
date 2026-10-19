@@ -22,6 +22,11 @@ serialization layer already had to answer it, in
 that answer is reused rather than re-derived. Of that set, the ones with no
 *unambiguous* builtin MLIR counterpart are refused here, individually and with
 a reason.
+
+The way back (issue 06), :func:`import_python_value`, reads a parsed
+attribute as the payload it was written from. Two pairs of Python types share
+a spelling, ``tuple`` and ``list``, and ``bytes`` and ``bytearray``, so it
+takes the Kirin type the payload was declared with and lets that decide.
 """
 
 from __future__ import annotations
@@ -31,7 +36,18 @@ import struct
 from typing import Any
 from collections.abc import Callable
 
-from .errors import MLIRExportError
+from kirin.ir.attrs.types import (
+    Union,
+    AnyType,
+    Generic,
+    Literal,
+    PyClass,
+    TypeVar,
+    TypeAttribute,
+)
+
+from . import parse
+from .errors import MLIRExportError, MLIRImportError
 
 #: MLIR's builtin ``IntegerAttr`` needs a fixed bit width. Python's ``int`` has
 #: none. i64 is the carrier; anything that does not fit is refused rather than
@@ -205,3 +221,139 @@ _REFUSALS: dict[type, str] = {
         "builtin complex attribute to carry this"
     ),
 }
+
+
+# -- the way back (issue 06) --------------------------------------------------
+
+
+def import_python_value(attr: parse.Attribute, hint: TypeAttribute) -> Any:
+    """The Python payload :func:`emit_python_value` wrote as ``attr``.
+
+    Its inverse, for the import. The attribute says what the payload is,
+    except where two Python types share one spelling: an array is a ``tuple``
+    or a ``list``, and a ``dense`` i8 is ``bytes`` or a ``bytearray``.
+    ``hint``, the Kirin type the payload was declared with, decides those:
+    a statement field's type, or a ``Literal``'s. What it leaves open is
+    refused, never guessed (issue 06, step 0, decision 8). Nothing else is
+    checked against it: ``1 : i64`` under a field declared ``float`` reads
+    back as the ``int`` the exporter was given.
+
+    A ``dict`` comes back in the order the text has its entries. ``mlir-opt``
+    sorts every dictionary by key, so after a pass through it the order is
+    sorted. ``==`` does not see that, but iteration does.
+
+    Raises:
+        MLIRImportError: for an attribute :func:`emit_python_value` never
+            writes, or an array or ``dense`` that ``hint`` does not decide.
+    """
+    if isinstance(attr, parse.UnitAttr):
+        return None
+    if isinstance(attr, parse.BoolAttr):
+        return attr.value
+    if isinstance(attr, parse.IntegerAttr):
+        if attr.type != parse.I64:
+            raise MLIRImportError(
+                f"found an integer of type {attr.type}; the exporter writes every "
+                "integer as an i64"
+            )
+        return attr.value
+    if isinstance(attr, parse.FloatAttr):
+        if attr.type != parse.F64:
+            raise MLIRImportError(
+                f"found a float of type {attr.type}; the exporter writes every "
+                "float as an f64"
+            )
+        return attr.value
+    if isinstance(attr, parse.StringAttr):
+        return attr.value
+    if isinstance(attr, parse.ArrayAttr):
+        kind = _declared(hint, (tuple, list), "an array")
+        items = _item_hints(hint, kind, len(attr.elements))
+        return kind(map(import_python_value, attr.elements, items))
+    if isinstance(attr, parse.DictionaryAttr):
+        items = _item_hints(hint, dict, len(attr.entries))
+        return {
+            key: import_python_value(value, item)
+            for (key, value), item in zip(attr.entries.items(), items)
+        }
+    if isinstance(attr, parse.DenseElementsAttr):
+        bytes_type = parse.TensorType((len(attr.values),), parse.IntegerType(8))
+        if attr.type != bytes_type or not all(-128 <= v < 128 for v in attr.values):
+            raise MLIRImportError(
+                f"found dense elements of type {attr.type}; the exporter writes "
+                "dense only for bytes, as a one-dimensional tensor of i8"
+            )
+        kind = _declared(hint, (bytes, bytearray), "a dense i8 tensor")
+        return kind(v & 0xFF for v in attr.values)
+    if isinstance(attr, parse.TypeAttr):
+        # The one back-edge, as on the way out: a class used as data.
+        from .types import import_type
+
+        typ = import_type(attr.type)
+        if not isinstance(typ, PyClass):
+            raise MLIRImportError(
+                f"found the type {attr.type} as data; a type is data only as the "
+                "!kirin.pyclass of a Python class"
+            )
+        return typ.typ
+    if isinstance(attr, parse.SymbolRefAttr):
+        raise MLIRImportError(
+            "found a symbol reference inside a payload; the exporter writes a "
+            "kernel as @symbol only as a whole attribute, never inside one"
+        )
+    raise MLIRImportError(
+        f"found {type(attr).__name__}, which the exporter never writes as data; "
+        "array<...> is written only for operandSegmentSizes"
+    )
+
+
+def _declared(hint: TypeAttribute, kinds: tuple[type, ...], what: str) -> type:
+    """The one class of ``kinds`` that ``hint`` declares, or a refusal."""
+    declared = [kind for kind in kinds if _members(hint, kind)]
+    if len(declared) == 1:
+        return declared[0]
+    names = " or ".join(kind.__name__ for kind in kinds)
+    raise MLIRImportError(
+        f"{what} may be a {names}, and the declared type {hint!r} does not say "
+        "which; the import reads it only against a declared type that does"
+    )
+
+
+def _members(hint: TypeAttribute, kind: type) -> list[PyClass | Generic]:
+    """The parts of ``hint`` that declare exactly the class ``kind``.
+
+    Exactly, because :func:`emit_python_value` dispatches on the exact type:
+    a payload written as an array was a ``tuple`` or a ``list``, never a
+    subclass of one.
+    """
+    if isinstance(hint, Union):
+        return [found for member in hint.types for found in _members(member, kind)]
+    if isinstance(hint, TypeVar):
+        return _members(hint.bound, kind)
+    if isinstance(hint, Literal):
+        return _members(hint.type, kind)
+    if isinstance(hint, PyClass) and hint.typ is kind:
+        return [hint]
+    if isinstance(hint, Generic) and hint.body.typ is kind:
+        return [hint]
+    return []
+
+
+def _item_hints(hint: TypeAttribute, kind: type, count: int) -> list[TypeAttribute]:
+    """The declared type of each of ``count`` items, or of a dict's values.
+
+    ``tuple[int, str]`` declares each position, ``tuple[str, ...]`` and
+    ``list[str]`` every item, and ``dict[str, int]`` every value. Anything
+    else declares nothing about the items, and neither does a ``hint`` with
+    two members of the same class, which would leave the choice to set order.
+    """
+    members = _members(hint, kind)
+    if len(members) == 1 and isinstance(generic := members[0], Generic):
+        if kind is tuple:
+            rest = generic.vararg.typ if generic.vararg is not None else AnyType()
+            return [
+                generic.vars[i] if i < len(generic.vars) else rest for i in range(count)
+            ]
+        if generic.vars:
+            return [generic.vars[-1]] * count
+    return [AnyType()] * count

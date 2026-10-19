@@ -51,6 +51,8 @@ from .errors import MLIRImportError
 
 # -- types --------------------------------------------------------------------
 
+# Each type's ``str`` is its MLIR spelling, for the import's error messages.
+
 
 @dataclass(frozen=True)
 class IntegerType:
@@ -59,6 +61,9 @@ class IntegerType:
     width: int
     signedness: str = ""
 
+    def __str__(self) -> str:
+        return f"{self.signedness}i{self.width}"
+
 
 @dataclass(frozen=True)
 class FloatType:
@@ -66,15 +71,24 @@ class FloatType:
 
     name: str
 
+    def __str__(self) -> str:
+        return self.name
+
 
 @dataclass(frozen=True)
 class IndexType:
     """``index``."""
 
+    def __str__(self) -> str:
+        return "index"
+
 
 @dataclass(frozen=True)
 class NoneType:
     """``none``."""
+
+    def __str__(self) -> str:
+        return "none"
 
 
 @dataclass(frozen=True)
@@ -84,6 +98,9 @@ class TensorType:
     shape: tuple[int, ...]
     element: Type
 
+    def __str__(self) -> str:
+        return f"tensor<{''.join(f'{d}x' for d in self.shape)}{self.element}>"
+
 
 @dataclass(frozen=True)
 class FunctionType:
@@ -91,6 +108,10 @@ class FunctionType:
 
     inputs: tuple[Type, ...]
     results: tuple[Type, ...]
+
+    def __str__(self) -> str:
+        inputs = ", ".join(map(str, self.inputs))
+        return f"({inputs}) -> ({', '.join(map(str, self.results))})"
 
 
 @dataclass(frozen=True)
@@ -105,6 +126,10 @@ class DialectType:
     dialect: str
     name: str
     params: tuple[Attribute, ...] = ()
+
+    def __str__(self) -> str:
+        """The name only: enough to say what was found in an error."""
+        return f"!{self.dialect}.{self.name}" + ("<...>" if self.params else "")
 
 
 Type = (

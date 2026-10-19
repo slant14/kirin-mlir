@@ -9,9 +9,11 @@ Layout, in dependency order:
   out and in (issues 02, 06)
 - ``parse.py``  -- MLIR generic form read back into a plain tree, the first
   stage of the import (issue 06)
-- ``values.py`` -- Python payloads to builtin MLIR attributes (issue 02)
-- ``types.py``  -- Kirin type lattice to the ``!kirin.*`` family (issue 02)
-- ``attrs.py``  -- Kirin attributes to MLIR attributes (issue 02)
+- ``values.py`` -- Python payloads to builtin MLIR attributes and back
+  (issues 02, 06)
+- ``types.py``  -- Kirin type lattice to the ``!kirin.*`` family and back
+  (issues 02, 06)
+- ``attrs.py``  -- Kirin attributes to MLIR attributes and back (issues 02, 06)
 - ``names.py``  -- Kirin names mangled into legal MLIR names (ADR 0002, issue 03)
 - ``prepare.py`` -- export preconditions: typed, closure-free, one module (issue 03)
 - ``emit.py``   -- the ``emit.mlir`` emitter over generic assembly form (issue 03)
@@ -39,6 +41,9 @@ from .attrs import (
     register_attribute as register_attribute,
     emit_statement_attribute as emit_statement_attribute,
     emit_statement_attributes as emit_statement_attributes,
+    register_attribute_import as register_attribute_import,
+    import_statement_attribute as import_statement_attribute,
+    import_statement_attributes as import_statement_attributes,
 )
 from .names import PREFIX as PREFIX, NameTable as NameTable, mangle as mangle
 from .parse import (
@@ -50,9 +55,12 @@ from .types import (
     DIALECT as DIALECT,
     TYPE_SCHEMA as TYPE_SCHEMA,
     TYPE_HANDLERS as TYPE_HANDLERS,
+    TYPE_IMPORTERS as TYPE_IMPORTERS,
     TypeSchema as TypeSchema,
     emit_type as emit_type,
+    import_type as import_type,
     pyclass_type as pyclass_type,
+    pyclass_named as pyclass_named,
     qualified_name as qualified_name,
 )
 from .errors import (
@@ -62,6 +70,7 @@ from .errors import (
 from .values import (
     escape_string as escape_string,
     emit_python_value as emit_python_value,
+    import_python_value as import_python_value,
 )
 from .prepare import (
     PreparedModule as PreparedModule,

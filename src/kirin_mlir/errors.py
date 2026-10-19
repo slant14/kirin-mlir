@@ -14,7 +14,9 @@ optional ``stmt`` and ``key`` slots that an outer frame fills in on the way out
 -- see :func:`kirin_mlir.attrs.emit_statement_attributes`.
 
 :class:`MLIRImportError` is the one refusal on the way in (issue 06). Its input
-is text, so it says where in the text: a line and a column.
+is text, so it says where in the text: a line and a column. Like the export's
+error, it also has ``stmt`` and ``key`` slots, for the statement class and the
+attribute an imported value was meant for, filled in the same way.
 """
 
 from __future__ import annotations
@@ -84,15 +86,43 @@ class MLIRImportError(Exception):
         message: what could not be read, and why.
         line: the 1-based line of the text it was found on, if known.
         column: the 1-based column, if known.
+        stmt: the statement class the text was being read into, if known.
+        key: the attribute key it was found under, if known.
     """
 
     def __init__(
-        self, message: str, *, line: int | None = None, column: int | None = None
+        self,
+        message: str,
+        *,
+        line: int | None = None,
+        column: int | None = None,
+        stmt: type[ir.Statement] | None = None,
+        key: str | None = None,
     ) -> None:
         self.message = message
         self.line = line
         self.column = column
+        self.stmt = stmt
+        self.key = key
         super().__init__(self._render())
+
+    def attach(
+        self,
+        *,
+        stmt: type[ir.Statement] | None = None,
+        key: str | None = None,
+    ) -> MLIRImportError:
+        """Fill in whichever context slots are still empty, in place.
+
+        :meth:`MLIRExportError.attach` for the way in. A type or payload
+        lookup does not know which statement's attribute it was reading.
+        """
+        if self.stmt is None:
+            self.stmt = stmt
+        if self.key is None:
+            self.key = key
+        self.args = (self._render(),)
+        return self
 
     def at(self, line: int | None, column: int | None = None) -> MLIRImportError:
         """Fill in the location if it is still unknown, in place.
@@ -108,11 +138,19 @@ class MLIRImportError(Exception):
         return self
 
     def _render(self) -> str:
+        where: list[str] = []
+        if self.stmt is not None:
+            where.append(f"statement {_stmt_name(self.stmt)!r}")
+        if self.key is not None:
+            where.append(f"attribute {self.key!r}")
+        message = self.message
+        if where:
+            message = f"{message} [in {', '.join(where)}]"
         if self.line is None:
-            return self.message
+            return message
         if self.column is None:
-            return f"line {self.line}: {self.message}"
-        return f"line {self.line}, column {self.column}: {self.message}"
+            return f"line {self.line}: {message}"
+        return f"line {self.line}, column {self.column}: {message}"
 
 
 def _stmt_name(stmt: Any) -> str:

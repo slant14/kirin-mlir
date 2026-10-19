@@ -29,6 +29,7 @@ from kirin import ir, types
 from oracle import MLIR_OPT, SKIP_REASON, mlir_opt
 from test_irdl import hybrid
 from test_parse import canonical, operations
+from test_import import assert_types_and_attributes_read_back
 
 from kirin_mlir import (
     NameTable,
@@ -251,3 +252,20 @@ def test_every_parsed_stim_operation_names_the_statement_it_came_from(kernel):
         type(stmt) for method in module.methods for stmt in method.code.walk()
     )
     assert parsed == expected
+
+
+@pytest.mark.parametrize("printed", [False, pytest.param(True, marks=needs_mlir)])
+@pytest.mark.parametrize("kernel", EVERY, ids=ids)
+def test_every_stim_type_and_attribute_reads_back(kernel, printed):
+    """Issue 06 step 3: every ``dagger``, constant and ``REPEAT`` count.
+
+    From our text, and from ``mlir-opt``'s printout with the stim IRDL loaded,
+    so from operations real MLIR has verified.
+    """
+    module = prepare_for_mlir(kernel)
+    text = emit_mlir(module)
+    if printed:
+        result = hybrid(text, str(STIM_IRDL), "--mlir-print-op-generic")
+        assert result.returncode == 0, result.stderr
+        text = result.stdout
+    assert_types_and_attributes_read_back(module, parse_module(text))
