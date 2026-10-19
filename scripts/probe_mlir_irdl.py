@@ -655,6 +655,45 @@ def locations() -> None:
     )
 
 
+def variadic_binding() -> None:
+    rule("11. A variadic group's operands must share one type under IRDL")
+    # IRDL binds a constraint to the first type it meets, and a variadic group
+    # has one constraint for all its operands, even irdl.any. Kirin's
+    # (x, 1.5) is py.tuple.new(int, float), so MLIR rejects a valid program.
+    irdl = write(
+        "tuple.irdl.mlir",
+        "irdl.dialect @kirin_py_tuple {\n  irdl.operation @new {\n"
+        "    %0 = irdl.any\n    %1 = irdl.any\n"
+        "    irdl.operands(args: variadic %0)\n    irdl.results(result: %1)\n"
+        "  }\n}\n",
+    )
+    head = '%i = "test.i"() : () -> i64\n%f = "test.f"() : () -> f64\n'
+    flags = (f"--irdl-file={irdl}", "--allow-unregistered-dialect")
+    expect(
+        "two operands of one type are accepted",
+        run(
+            *flags,
+            write(
+                "t1.mlir",
+                head + '%t = "kirin_py_tuple.new"(%i, %i) : (i64, i64) -> i64\n',
+            ),
+        ),
+        accepted=True,
+    )
+    expect(
+        "two operands of different types are rejected, even under irdl.any",
+        run(
+            *flags,
+            write(
+                "t2.mlir",
+                head + '%t = "kirin_py_tuple.new"(%i, %f) : (i64, f64) -> i64\n',
+            ),
+        ),
+        accepted=False,
+        error="expected 'i64' but got 'f64'",
+    )
+
+
 def main() -> None:
     print(f"mlir-opt: {MLIR_OPT}")
     print(run("--version").stdout.strip().splitlines()[0])
@@ -668,6 +707,7 @@ def main() -> None:
     survey()
     properties()
     locations()
+    variadic_binding()
     rule("Result")
     if FAILURES:
         print(

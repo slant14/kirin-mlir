@@ -3,12 +3,19 @@
 // Do not edit; regenerate.
 //
 // Checked: operand and result counts, that each declared attribute is
-// present, and that every !kirin.* type is well formed.
+// present, that every operand and result has a !kirin.* type, and that
+// every !kirin.* type is well formed.
 //
-// Not checked: operand, result and attribute types. Each is irdl.any, with
-// its own variable. Kirin's field types are lattice bounds, which IRDL
-// cannot check, and a TypeVar shared between fields does not mean equal
-// types in Kirin.
+// Not checked: which !kirin.* type, and attribute types. Kirin's field
+// types are lattice bounds, which IRDL cannot check, and a TypeVar shared
+// between fields does not mean equal types in Kirin, so every field has
+// its own constraint.
+//
+// Checked too strictly: IRDL binds a constraint to the first type it
+// meets, and a variadic group has one constraint for all its operands.
+// So MLIR rejects a group whose operands differ in type, such as the
+// tuple (x, 1.5), although Kirin accepts it. IRDL cannot say otherwise;
+// a C++ dialect can (issue 07 phase A).
 //
 // Traits not expressed (IRDL has none; issue 07 phase A):
 //   stim.aux.constant.int       ConstantLike, FromPythonCall, Pure
@@ -94,308 +101,1235 @@ irdl.dialect @kirin {
 }
 irdl.dialect @kirin_stim_aux {
   irdl.operation @constant_int {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.results(result: %0)
-    irdl.attributes {"value" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.results(result: %9)
+    irdl.attributes {"value" = %10}
   }
   irdl.operation @constant_float {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.results(result: %0)
-    irdl.attributes {"value" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.results(result: %9)
+    irdl.attributes {"value" = %10}
   }
   irdl.operation @constant_bool {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.results(result: %0)
-    irdl.attributes {"value" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.results(result: %9)
+    irdl.attributes {"value" = %10}
   }
   irdl.operation @constant_str {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.results(result: %0)
-    irdl.attributes {"value" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.results(result: %9)
+    irdl.attributes {"value" = %10}
   }
   irdl.operation @neg {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(operand: %0)
-    irdl.results(result: %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(operand: %9)
+    irdl.results(result: %19)
   }
   irdl.operation @get_rec {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(id: %0)
-    irdl.results(result: %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(id: %9)
+    irdl.results(result: %19)
   }
   irdl.operation @detector {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(coord: variadic %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(coord: variadic %9, targets: variadic %19)
   }
   irdl.operation @obs_include {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(idx: %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(idx: %9, targets: variadic %19)
   }
   irdl.operation @tick {
   }
   irdl.operation @new_pauli_string {
-    %0 = irdl.any
-    %1 = irdl.any
-    %2 = irdl.any
-    %3 = irdl.any
-    irdl.operands(string: variadic %0, flipped: variadic %1, targets: variadic %2)
-    irdl.results(result: %3)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    %20 = irdl.base @kirin::@any
+    %21 = irdl.base @kirin::@bottom
+    %22 = irdl.base @kirin::@pyclass
+    %23 = irdl.base @kirin::@literal
+    %24 = irdl.base @kirin::@union
+    %25 = irdl.base @kirin::@vararg
+    %26 = irdl.base @kirin::@generic
+    %27 = irdl.base @kirin::@method
+    %28 = irdl.base @kirin::@anymethod
+    %29 = irdl.any_of(%20, %21, %22, %23, %24, %25, %26, %27, %28)
+    %30 = irdl.base @kirin::@any
+    %31 = irdl.base @kirin::@bottom
+    %32 = irdl.base @kirin::@pyclass
+    %33 = irdl.base @kirin::@literal
+    %34 = irdl.base @kirin::@union
+    %35 = irdl.base @kirin::@vararg
+    %36 = irdl.base @kirin::@generic
+    %37 = irdl.base @kirin::@method
+    %38 = irdl.base @kirin::@anymethod
+    %39 = irdl.any_of(%30, %31, %32, %33, %34, %35, %36, %37, %38)
+    irdl.operands(string: variadic %9, flipped: variadic %19, targets: variadic %29)
+    irdl.results(result: %39)
   }
   irdl.operation @qubit_coordinates {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(coord: variadic %0, target: %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(coord: variadic %9, target: %19)
   }
 }
 irdl.dialect @kirin_stim_collapse {
   irdl.operation @rz {
-    %0 = irdl.any
-    irdl.operands(targets: variadic %0)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    irdl.operands(targets: variadic %9)
   }
   irdl.operation @ry {
-    %0 = irdl.any
-    irdl.operands(targets: variadic %0)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    irdl.operands(targets: variadic %9)
   }
   irdl.operation @rx {
-    %0 = irdl.any
-    irdl.operands(targets: variadic %0)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    irdl.operands(targets: variadic %9)
   }
   irdl.operation @mz {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(p: %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(p: %9, targets: variadic %19)
   }
   irdl.operation @my {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(p: %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(p: %9, targets: variadic %19)
   }
   irdl.operation @mx {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(p: %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(p: %9, targets: variadic %19)
   }
   irdl.operation @mzz {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(p: %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(p: %9, targets: variadic %19)
   }
   irdl.operation @myy {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(p: %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(p: %9, targets: variadic %19)
   }
   irdl.operation @mxx {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(p: %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(p: %9, targets: variadic %19)
   }
   irdl.operation @mpp {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(p: %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(p: %9, targets: variadic %19)
   }
 }
 irdl.dialect @kirin_stim_gate {
   irdl.operation @spp {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0)
-    irdl.attributes {"dagger" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.operands(targets: variadic %9)
+    irdl.attributes {"dagger" = %10}
   }
   irdl.operation @cx {
-    %0 = irdl.any
-    %1 = irdl.any
-    %2 = irdl.any
-    irdl.operands(targets: variadic %0, controls: variadic %1)
-    irdl.attributes {"dagger" = %2}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    %20 = irdl.any
+    irdl.operands(targets: variadic %9, controls: variadic %19)
+    irdl.attributes {"dagger" = %20}
   }
   irdl.operation @cy {
-    %0 = irdl.any
-    %1 = irdl.any
-    %2 = irdl.any
-    irdl.operands(targets: variadic %0, controls: variadic %1)
-    irdl.attributes {"dagger" = %2}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    %20 = irdl.any
+    irdl.operands(targets: variadic %9, controls: variadic %19)
+    irdl.attributes {"dagger" = %20}
   }
   irdl.operation @cz {
-    %0 = irdl.any
-    %1 = irdl.any
-    %2 = irdl.any
-    irdl.operands(targets: variadic %0, controls: variadic %1)
-    irdl.attributes {"dagger" = %2}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    %20 = irdl.any
+    irdl.operands(targets: variadic %9, controls: variadic %19)
+    irdl.attributes {"dagger" = %20}
   }
   irdl.operation @i {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0)
-    irdl.attributes {"dagger" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.operands(targets: variadic %9)
+    irdl.attributes {"dagger" = %10}
   }
   irdl.operation @x {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0)
-    irdl.attributes {"dagger" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.operands(targets: variadic %9)
+    irdl.attributes {"dagger" = %10}
   }
   irdl.operation @y {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0)
-    irdl.attributes {"dagger" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.operands(targets: variadic %9)
+    irdl.attributes {"dagger" = %10}
   }
   irdl.operation @z {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0)
-    irdl.attributes {"dagger" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.operands(targets: variadic %9)
+    irdl.attributes {"dagger" = %10}
   }
   irdl.operation @h {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0)
-    irdl.attributes {"dagger" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.operands(targets: variadic %9)
+    irdl.attributes {"dagger" = %10}
   }
   irdl.operation @s {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0)
-    irdl.attributes {"dagger" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.operands(targets: variadic %9)
+    irdl.attributes {"dagger" = %10}
   }
   irdl.operation @sqrt_x {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0)
-    irdl.attributes {"dagger" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.operands(targets: variadic %9)
+    irdl.attributes {"dagger" = %10}
   }
   irdl.operation @sqrt_y {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0)
-    irdl.attributes {"dagger" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.operands(targets: variadic %9)
+    irdl.attributes {"dagger" = %10}
   }
   irdl.operation @sqrt_z {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0)
-    irdl.attributes {"dagger" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.operands(targets: variadic %9)
+    irdl.attributes {"dagger" = %10}
   }
   irdl.operation @swap {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0)
-    irdl.attributes {"dagger" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.operands(targets: variadic %9)
+    irdl.attributes {"dagger" = %10}
   }
   irdl.operation @t {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0)
-    irdl.attributes {"dagger" = %1}
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.any
+    irdl.operands(targets: variadic %9)
+    irdl.attributes {"dagger" = %10}
   }
   irdl.operation @r_x {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0, angle: %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(targets: variadic %9, angle: %19)
   }
   irdl.operation @r_y {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0, angle: %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(targets: variadic %9, angle: %19)
   }
   irdl.operation @r_z {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(targets: variadic %0, angle: %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(targets: variadic %9, angle: %19)
   }
   irdl.operation @u3 {
-    %0 = irdl.any
-    %1 = irdl.any
-    %2 = irdl.any
-    %3 = irdl.any
-    irdl.operands(targets: variadic %0, theta: %1, phi: %2, lam: %3)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    %20 = irdl.base @kirin::@any
+    %21 = irdl.base @kirin::@bottom
+    %22 = irdl.base @kirin::@pyclass
+    %23 = irdl.base @kirin::@literal
+    %24 = irdl.base @kirin::@union
+    %25 = irdl.base @kirin::@vararg
+    %26 = irdl.base @kirin::@generic
+    %27 = irdl.base @kirin::@method
+    %28 = irdl.base @kirin::@anymethod
+    %29 = irdl.any_of(%20, %21, %22, %23, %24, %25, %26, %27, %28)
+    %30 = irdl.base @kirin::@any
+    %31 = irdl.base @kirin::@bottom
+    %32 = irdl.base @kirin::@pyclass
+    %33 = irdl.base @kirin::@literal
+    %34 = irdl.base @kirin::@union
+    %35 = irdl.base @kirin::@vararg
+    %36 = irdl.base @kirin::@generic
+    %37 = irdl.base @kirin::@method
+    %38 = irdl.base @kirin::@anymethod
+    %39 = irdl.any_of(%30, %31, %32, %33, %34, %35, %36, %37, %38)
+    irdl.operands(targets: variadic %9, theta: %19, phi: %29, lam: %39)
   }
 }
 irdl.dialect @kirin_stim_noise {
   irdl.operation @depolarize1 {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(p: %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(p: %9, targets: variadic %19)
   }
   irdl.operation @depolarize2 {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(p: %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(p: %9, targets: variadic %19)
   }
   irdl.operation @paulichannel1 {
-    %0 = irdl.any
-    %1 = irdl.any
-    %2 = irdl.any
-    %3 = irdl.any
-    irdl.operands(px: %0, py: %1, pz: %2, targets: variadic %3)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    %20 = irdl.base @kirin::@any
+    %21 = irdl.base @kirin::@bottom
+    %22 = irdl.base @kirin::@pyclass
+    %23 = irdl.base @kirin::@literal
+    %24 = irdl.base @kirin::@union
+    %25 = irdl.base @kirin::@vararg
+    %26 = irdl.base @kirin::@generic
+    %27 = irdl.base @kirin::@method
+    %28 = irdl.base @kirin::@anymethod
+    %29 = irdl.any_of(%20, %21, %22, %23, %24, %25, %26, %27, %28)
+    %30 = irdl.base @kirin::@any
+    %31 = irdl.base @kirin::@bottom
+    %32 = irdl.base @kirin::@pyclass
+    %33 = irdl.base @kirin::@literal
+    %34 = irdl.base @kirin::@union
+    %35 = irdl.base @kirin::@vararg
+    %36 = irdl.base @kirin::@generic
+    %37 = irdl.base @kirin::@method
+    %38 = irdl.base @kirin::@anymethod
+    %39 = irdl.any_of(%30, %31, %32, %33, %34, %35, %36, %37, %38)
+    irdl.operands(px: %9, py: %19, pz: %29, targets: variadic %39)
   }
   irdl.operation @paulichannel2 {
-    %0 = irdl.any
-    %1 = irdl.any
-    %2 = irdl.any
-    %3 = irdl.any
-    %4 = irdl.any
-    %5 = irdl.any
-    %6 = irdl.any
-    %7 = irdl.any
-    %8 = irdl.any
-    %9 = irdl.any
-    %10 = irdl.any
-    %11 = irdl.any
-    %12 = irdl.any
-    %13 = irdl.any
-    %14 = irdl.any
-    %15 = irdl.any
-    irdl.operands(pix: %0, piy: %1, piz: %2, pxi: %3, pxx: %4, pxy: %5, pxz: %6, pyi: %7, pyx: %8, pyy: %9, pyz: %10, pzi: %11, pzx: %12, pzy: %13, pzz: %14, targets: variadic %15)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    %20 = irdl.base @kirin::@any
+    %21 = irdl.base @kirin::@bottom
+    %22 = irdl.base @kirin::@pyclass
+    %23 = irdl.base @kirin::@literal
+    %24 = irdl.base @kirin::@union
+    %25 = irdl.base @kirin::@vararg
+    %26 = irdl.base @kirin::@generic
+    %27 = irdl.base @kirin::@method
+    %28 = irdl.base @kirin::@anymethod
+    %29 = irdl.any_of(%20, %21, %22, %23, %24, %25, %26, %27, %28)
+    %30 = irdl.base @kirin::@any
+    %31 = irdl.base @kirin::@bottom
+    %32 = irdl.base @kirin::@pyclass
+    %33 = irdl.base @kirin::@literal
+    %34 = irdl.base @kirin::@union
+    %35 = irdl.base @kirin::@vararg
+    %36 = irdl.base @kirin::@generic
+    %37 = irdl.base @kirin::@method
+    %38 = irdl.base @kirin::@anymethod
+    %39 = irdl.any_of(%30, %31, %32, %33, %34, %35, %36, %37, %38)
+    %40 = irdl.base @kirin::@any
+    %41 = irdl.base @kirin::@bottom
+    %42 = irdl.base @kirin::@pyclass
+    %43 = irdl.base @kirin::@literal
+    %44 = irdl.base @kirin::@union
+    %45 = irdl.base @kirin::@vararg
+    %46 = irdl.base @kirin::@generic
+    %47 = irdl.base @kirin::@method
+    %48 = irdl.base @kirin::@anymethod
+    %49 = irdl.any_of(%40, %41, %42, %43, %44, %45, %46, %47, %48)
+    %50 = irdl.base @kirin::@any
+    %51 = irdl.base @kirin::@bottom
+    %52 = irdl.base @kirin::@pyclass
+    %53 = irdl.base @kirin::@literal
+    %54 = irdl.base @kirin::@union
+    %55 = irdl.base @kirin::@vararg
+    %56 = irdl.base @kirin::@generic
+    %57 = irdl.base @kirin::@method
+    %58 = irdl.base @kirin::@anymethod
+    %59 = irdl.any_of(%50, %51, %52, %53, %54, %55, %56, %57, %58)
+    %60 = irdl.base @kirin::@any
+    %61 = irdl.base @kirin::@bottom
+    %62 = irdl.base @kirin::@pyclass
+    %63 = irdl.base @kirin::@literal
+    %64 = irdl.base @kirin::@union
+    %65 = irdl.base @kirin::@vararg
+    %66 = irdl.base @kirin::@generic
+    %67 = irdl.base @kirin::@method
+    %68 = irdl.base @kirin::@anymethod
+    %69 = irdl.any_of(%60, %61, %62, %63, %64, %65, %66, %67, %68)
+    %70 = irdl.base @kirin::@any
+    %71 = irdl.base @kirin::@bottom
+    %72 = irdl.base @kirin::@pyclass
+    %73 = irdl.base @kirin::@literal
+    %74 = irdl.base @kirin::@union
+    %75 = irdl.base @kirin::@vararg
+    %76 = irdl.base @kirin::@generic
+    %77 = irdl.base @kirin::@method
+    %78 = irdl.base @kirin::@anymethod
+    %79 = irdl.any_of(%70, %71, %72, %73, %74, %75, %76, %77, %78)
+    %80 = irdl.base @kirin::@any
+    %81 = irdl.base @kirin::@bottom
+    %82 = irdl.base @kirin::@pyclass
+    %83 = irdl.base @kirin::@literal
+    %84 = irdl.base @kirin::@union
+    %85 = irdl.base @kirin::@vararg
+    %86 = irdl.base @kirin::@generic
+    %87 = irdl.base @kirin::@method
+    %88 = irdl.base @kirin::@anymethod
+    %89 = irdl.any_of(%80, %81, %82, %83, %84, %85, %86, %87, %88)
+    %90 = irdl.base @kirin::@any
+    %91 = irdl.base @kirin::@bottom
+    %92 = irdl.base @kirin::@pyclass
+    %93 = irdl.base @kirin::@literal
+    %94 = irdl.base @kirin::@union
+    %95 = irdl.base @kirin::@vararg
+    %96 = irdl.base @kirin::@generic
+    %97 = irdl.base @kirin::@method
+    %98 = irdl.base @kirin::@anymethod
+    %99 = irdl.any_of(%90, %91, %92, %93, %94, %95, %96, %97, %98)
+    %100 = irdl.base @kirin::@any
+    %101 = irdl.base @kirin::@bottom
+    %102 = irdl.base @kirin::@pyclass
+    %103 = irdl.base @kirin::@literal
+    %104 = irdl.base @kirin::@union
+    %105 = irdl.base @kirin::@vararg
+    %106 = irdl.base @kirin::@generic
+    %107 = irdl.base @kirin::@method
+    %108 = irdl.base @kirin::@anymethod
+    %109 = irdl.any_of(%100, %101, %102, %103, %104, %105, %106, %107, %108)
+    %110 = irdl.base @kirin::@any
+    %111 = irdl.base @kirin::@bottom
+    %112 = irdl.base @kirin::@pyclass
+    %113 = irdl.base @kirin::@literal
+    %114 = irdl.base @kirin::@union
+    %115 = irdl.base @kirin::@vararg
+    %116 = irdl.base @kirin::@generic
+    %117 = irdl.base @kirin::@method
+    %118 = irdl.base @kirin::@anymethod
+    %119 = irdl.any_of(%110, %111, %112, %113, %114, %115, %116, %117, %118)
+    %120 = irdl.base @kirin::@any
+    %121 = irdl.base @kirin::@bottom
+    %122 = irdl.base @kirin::@pyclass
+    %123 = irdl.base @kirin::@literal
+    %124 = irdl.base @kirin::@union
+    %125 = irdl.base @kirin::@vararg
+    %126 = irdl.base @kirin::@generic
+    %127 = irdl.base @kirin::@method
+    %128 = irdl.base @kirin::@anymethod
+    %129 = irdl.any_of(%120, %121, %122, %123, %124, %125, %126, %127, %128)
+    %130 = irdl.base @kirin::@any
+    %131 = irdl.base @kirin::@bottom
+    %132 = irdl.base @kirin::@pyclass
+    %133 = irdl.base @kirin::@literal
+    %134 = irdl.base @kirin::@union
+    %135 = irdl.base @kirin::@vararg
+    %136 = irdl.base @kirin::@generic
+    %137 = irdl.base @kirin::@method
+    %138 = irdl.base @kirin::@anymethod
+    %139 = irdl.any_of(%130, %131, %132, %133, %134, %135, %136, %137, %138)
+    %140 = irdl.base @kirin::@any
+    %141 = irdl.base @kirin::@bottom
+    %142 = irdl.base @kirin::@pyclass
+    %143 = irdl.base @kirin::@literal
+    %144 = irdl.base @kirin::@union
+    %145 = irdl.base @kirin::@vararg
+    %146 = irdl.base @kirin::@generic
+    %147 = irdl.base @kirin::@method
+    %148 = irdl.base @kirin::@anymethod
+    %149 = irdl.any_of(%140, %141, %142, %143, %144, %145, %146, %147, %148)
+    %150 = irdl.base @kirin::@any
+    %151 = irdl.base @kirin::@bottom
+    %152 = irdl.base @kirin::@pyclass
+    %153 = irdl.base @kirin::@literal
+    %154 = irdl.base @kirin::@union
+    %155 = irdl.base @kirin::@vararg
+    %156 = irdl.base @kirin::@generic
+    %157 = irdl.base @kirin::@method
+    %158 = irdl.base @kirin::@anymethod
+    %159 = irdl.any_of(%150, %151, %152, %153, %154, %155, %156, %157, %158)
+    irdl.operands(pix: %9, piy: %19, piz: %29, pxi: %39, pxx: %49, pxy: %59, pxz: %69, pyi: %79, pyx: %89, pyy: %99, pyz: %109, pzi: %119, pzx: %129, pzy: %139, pzz: %149, targets: variadic %159)
   }
   irdl.operation @x_error {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(p: %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(p: %9, targets: variadic %19)
   }
   irdl.operation @y_error {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(p: %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(p: %9, targets: variadic %19)
   }
   irdl.operation @z_error {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(p: %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(p: %9, targets: variadic %19)
   }
   irdl.operation @triv_corr_error {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(probs: variadic %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(probs: variadic %9, targets: variadic %19)
   }
   irdl.operation @triv_error {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(probs: variadic %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(probs: variadic %9, targets: variadic %19)
   }
   irdl.operation @loss {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(probs: variadic %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(probs: variadic %9, targets: variadic %19)
   }
   irdl.operation @correlated_loss {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(probs: variadic %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(probs: variadic %9, targets: variadic %19)
   }
   irdl.operation @leakage {
-    %0 = irdl.any
-    %1 = irdl.any
-    irdl.operands(probs: variadic %0, targets: variadic %1)
+    %0 = irdl.base @kirin::@any
+    %1 = irdl.base @kirin::@bottom
+    %2 = irdl.base @kirin::@pyclass
+    %3 = irdl.base @kirin::@literal
+    %4 = irdl.base @kirin::@union
+    %5 = irdl.base @kirin::@vararg
+    %6 = irdl.base @kirin::@generic
+    %7 = irdl.base @kirin::@method
+    %8 = irdl.base @kirin::@anymethod
+    %9 = irdl.any_of(%0, %1, %2, %3, %4, %5, %6, %7, %8)
+    %10 = irdl.base @kirin::@any
+    %11 = irdl.base @kirin::@bottom
+    %12 = irdl.base @kirin::@pyclass
+    %13 = irdl.base @kirin::@literal
+    %14 = irdl.base @kirin::@union
+    %15 = irdl.base @kirin::@vararg
+    %16 = irdl.base @kirin::@generic
+    %17 = irdl.base @kirin::@method
+    %18 = irdl.base @kirin::@anymethod
+    %19 = irdl.any_of(%10, %11, %12, %13, %14, %15, %16, %17, %18)
+    irdl.operands(probs: variadic %9, targets: variadic %19)
   }
 }
