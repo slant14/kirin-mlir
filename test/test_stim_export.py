@@ -16,14 +16,20 @@ not that the operations are shaped right.
 The last checks load the checked-in ``kirin_stim.irdl.mlir`` (steps 8-9),
 which registers four of stim's five dialects, so every gate, measurement,
 reset and noise channel is verified. ``stim.cf`` and Kirin ``func`` stay
-unregistered (ADR 0002). Skipped without the ``stim`` extra, and the
-``mlir-opt`` checks without ``mlir-opt``.
+unregistered (ADR 0002).
+
+The import checks (issue 06) read each program back, from our text and from
+``mlir-opt``'s verified printout. The last of them is issue 05's third
+criterion: the program read back gives bloqade's ``emit.stim`` the circuit
+the original gives it, and stim simulates the two the same. Skipped without
+the ``stim`` extra, and the ``mlir-opt`` checks without ``mlir-opt``.
 """
 
 import re
 from pathlib import Path
 from collections import Counter
 
+import numpy
 import pytest
 from kirin import ir, types
 from oracle import MLIR_OPT, SKIP_REASON, mlir_opt
@@ -48,7 +54,8 @@ from kirin_mlir.cli import main
 
 pytest.importorskip("bloqade.stim", reason="needs the stim extra")
 
-from stim_kernels import EVERY, bell, dialects
+from bloqade import stim
+from stim_kernels import EVERY, bell, dialects, reference
 from bloqade.stim.dialects import gate
 
 needs_mlir = pytest.mark.skipif(MLIR_OPT is None, reason=SKIP_REASON)
@@ -62,6 +69,19 @@ REGENERATE = ["irdl", *REGISTRABLE, "--package", "bloqade.stim", "-o"]
 
 def ids(kernel: ir.Method) -> str:
     return kernel.sym_name
+
+
+def read_back(module, printed: bool) -> str:
+    """``module``'s text, or, if ``printed``, ``mlir-opt``'s printout of it.
+
+    Printed with the stim IRDL loaded, so from operations real MLIR verified.
+    """
+    text = emit_mlir(module)
+    if printed:
+        result = hybrid(text, str(STIM_IRDL), "--mlir-print-op-generic")
+        assert result.returncode == 0, result.stderr
+        text = result.stdout
+    return text
 
 
 @pytest.mark.parametrize("kernel", EVERY, ids=ids)
@@ -269,11 +289,7 @@ def test_every_stim_type_and_attribute_reads_back(kernel, printed):
     so from operations real MLIR has verified.
     """
     module = prepare_for_mlir(kernel)
-    text = emit_mlir(module)
-    if printed:
-        result = hybrid(text, str(STIM_IRDL), "--mlir-print-op-generic")
-        assert result.returncode == 0, result.stderr
-        text = result.stdout
+    text = read_back(module, printed)
     assert_types_and_attributes_read_back(module, parse_module(text))
 
 
@@ -282,11 +298,7 @@ def test_every_stim_type_and_attribute_reads_back(kernel, printed):
 def test_every_stim_program_is_rebuilt_as_its_prepared_copy(kernel, printed):
     """Issue 06 step 4, ``REPEAT``'s region and its terminator-less block too."""
     module = prepare_for_mlir(kernel)
-    text = emit_mlir(module)
-    if printed:
-        result = hybrid(text, str(STIM_IRDL), "--mlir-print-op-generic")
-        assert result.returncode == 0, result.stderr
-        text = result.stdout
+    text = read_back(module, printed)
     assert_rebuilt(module, rebuilt(module, text))
 
 
@@ -295,9 +307,53 @@ def test_every_stim_program_is_rebuilt_as_its_prepared_copy(kernel, printed):
 def test_every_stim_program_comes_back_as_its_kernel(kernel, printed):
     """Issue 06 step 5: ``import_mlir`` on what MLIR verified."""
     module = prepare_for_mlir(kernel)
-    text = emit_mlir(module)
-    if printed:
-        result = hybrid(text, str(STIM_IRDL), "--mlir-print-op-generic")
-        assert result.returncode == 0, result.stderr
-        text = result.stdout
+    text = read_back(module, printed)
     assert_kernels_come_back(module, import_mlir(text, kernel.dialects))
+
+
+@pytest.mark.parametrize("printed", [False, pytest.param(True, marks=needs_mlir)])
+@pytest.mark.parametrize("kernel", EVERY, ids=ids)
+def test_every_imported_stim_program_exports_to_the_module_it_came_from(
+    kernel, printed
+):
+    """Issue 06 step 6: export, import, export gives the first text again."""
+    module = prepare_for_mlir(kernel)
+    imported = import_mlir(read_back(module, printed), kernel.dialects)
+    again = emit_mlir(prepare_for_mlir(imported.entry))
+    assert canonical(parse_module(again)) == canonical(parse_module(emit_mlir(module)))
+
+
+#: Shots per sampler, and the one seed both circuits are sampled from.
+SHOTS, SEED = 256, 2026
+
+
+@pytest.mark.parametrize("printed", [False, pytest.param(True, marks=needs_mlir)])
+@pytest.mark.parametrize("kernel", EVERY, ids=ids)
+def test_every_stim_program_simulates_as_the_original(kernel, printed):
+    """Issue 05's third criterion, through issue 06 (decided 2026-10-18).
+
+    The program goes from Kirin to MLIR, through ``mlir-opt`` verified against
+    the stim IRDL when ``printed``, back to Kirin, and to stim by bloqade's
+    own ``emit.stim``. It is compared with :func:`stim_kernels.reference`,
+    the circuit ``emit.stim`` gives the original. Both sides go through
+    ``emit.stim``, so a spelling of bloqade's own, ``SQRT_Z`` written as
+    ``S``, is the same on both.
+
+    The circuits must be equal instruction by instruction. Then, as the
+    criterion asks, they must simulate the same: the same detector error
+    model, and the same measurement and detector samples from one seed.
+    """
+    module = prepare_for_mlir(kernel)
+    imported = import_mlir(read_back(module, printed), kernel.dialects)
+    got, want = stim.Circuit(imported.entry), reference(kernel)
+    assert got == want, f"{got}\n--- the original's ---\n{want}"
+
+    # PAULI_CHANNEL_2 needs approximate_disjoint_errors (issue 05, step 10).
+    model = {"approximate_disjoint_errors": True}
+    assert got.detector_error_model(**model) == want.detector_error_model(**model)
+    for sampler in ("compile_sampler", "compile_detector_sampler"):
+        shots = [
+            getattr(circuit, sampler)(seed=SEED).sample(SHOTS)
+            for circuit in (got, want)
+        ]
+        assert numpy.array_equal(*shots), sampler

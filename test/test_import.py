@@ -25,10 +25,16 @@ with the prepared copies' names, argument names (``%self``'s aside),
 argument and return types, and dialect group. Every ``@symbol`` comes back as
 the imported kernel of that name, so a recursive kernel holds itself, and
 every callee knows its callers.
+
+Step 6 checks what the kernels mean, not only how they are built. Each
+imported kernel, from both writers, computes in Kirin's interpreter what the
+original computes. Exported again, it gives the module it was imported from,
+which is MLIR's own meaning of a round trip.
 """
 
 import sys
 import struct
+import itertools
 from collections import Counter, defaultdict
 
 import pytest
@@ -37,7 +43,7 @@ from kirin import ir, types
 from oracle import MLIR_OPT, SKIP_REASON
 from test_irdl import CORPUS
 from kirin.decl import info, statement
-from test_parse import PAYLOADS, generic, operations
+from test_parse import PAYLOADS, generic, canonical, operations
 from kirin.prelude import basic
 from kirin.dialects import py, func, ilist
 from kirin.ir.attrs.types import (
@@ -923,3 +929,45 @@ def test_a_dialect_group_whose_names_collide_is_refused():
     clashing = ir.DialectGroup([ir.Dialect("a.b"), ir.Dialect("a_b")])
     with pytest.raises(MLIRImportError, match="cannot be named in MLIR"):
         import_mlir(_branches_text(), clashing)
+
+
+# -- step 6: what the kernels mean -------------------------------------------
+
+#: What each kernel is run on, every combination: negative, zero and
+#: positive, so both sides of every branch in the corpus are taken.
+INPUTS = (-3, -1, 0, 1, 2, 5)
+
+
+@pytest.mark.parametrize("write", WRITERS)
+@pytest.mark.parametrize("kernel", CORPUS, ids=ids)
+def test_every_imported_kernel_computes_what_the_original_does(kernel, write):
+    """Criterion 3, over every kernel of the corpus.
+
+    Compared with the original kernel, not its prepared copy, so preparation
+    is under test as well. A result must have the original's Python type as
+    well as its value, since ``1 == 1.0``.
+    """
+    module = prepare_for_mlir(kernel)
+    imported = import_mlir(write(emit_mlir(module)), kernel.dialects)
+    for args in itertools.product(INPUTS, repeat=kernel.nargs - 1):
+        want = kernel(*args)
+        got = imported.entry(*args)
+        assert type(got) is type(want) and got == want, args
+
+
+@pytest.mark.parametrize("write", WRITERS)
+@pytest.mark.parametrize("kernel", CORPUS, ids=ids)
+def test_an_imported_module_exports_to_the_module_it_came_from(kernel, write):
+    """Export, import, export: the second text is the first.
+
+    MLIR's own test of a round trip, ``--verify-roundtrip``, prints, parses
+    and prints again and requires the two printouts to agree. This is the same
+    test across the Kirin boundary. The imported entry is prepared again, as
+    every kernel must be before export, so this also shows that preparation
+    accepts what the import makes and changes nothing in it. Compared as
+    parsed trees, with values and blocks renamed in definition order.
+    """
+    text = emit_mlir(prepare_for_mlir(kernel))
+    imported = import_mlir(write(text), kernel.dialects)
+    again = emit_mlir(prepare_for_mlir(imported.entry))
+    assert canonical(parse_module(again)) == canonical(parse_module(text))

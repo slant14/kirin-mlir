@@ -566,6 +566,95 @@ def survey() -> None:
         )
 
 
+def properties() -> None:
+    rule("9. A C++ op prints its attributes as properties; an IRDL op does not")
+    # Issue 06's import refuses <{...}>, which neither of today's writers
+    # produces. A dialect defined in C++ (issue 07) changes that.
+    branch = write(
+        "p1.mlir",
+        '"test.f"() ({\n^bb0(%c: i1, %x: i64):\n'
+        '  "cf.cond_br"(%c, %x) [^bb1, ^bb2] '
+        "{operandSegmentSizes = array<i32: 1, 1, 0>} : (i1, i64) -> ()\n"
+        '^bb1(%a: i64):\n  "test.end"() : () -> ()\n'
+        '^bb2:\n  "test.end"() : () -> ()\n}) : () -> ()\n',
+    )
+    expect(
+        "upstream cf.cond_br takes them from the dictionary, prints <{...}>",
+        run("--allow-unregistered-dialect", "--mlir-print-op-generic", branch),
+        accepted=True,
+        output="<{operandSegmentSizes = array<i32: 1, 1, 0>}>",
+    )
+    irdl = write(
+        "p.irdl.mlir",
+        """
+irdl.dialect @kirin_func {
+  irdl.operation @call {
+    %0 = irdl.any
+    irdl.operands(inputs: variadic %0, kwargs: variadic %0)
+    irdl.results(result: %0)
+  }
+}
+""",
+    )
+    call = write(
+        "p2.mlir",
+        '%a = "test.a"() : () -> i64\n%r = "kirin_func.call"(%a, %a, %a) '
+        "{operandSegmentSizes = array<i32: 2, 1>} : (i64, i64, i64) -> i64\n",
+    )
+    expect(
+        "an IRDL op keeps them in the dictionary",
+        run(
+            f"--irdl-file={irdl}",
+            "--allow-unregistered-dialect",
+            "--mlir-print-op-generic",
+            call,
+        ),
+        accepted=True,
+        output="{operandSegmentSizes = array<i32: 2, 1>} :",
+    )
+
+
+def locations() -> None:
+    rule("10. Locations: a file location names the source line in errors")
+    # Neither direction carries locations yet (walkthrough 06, section 11).
+    irdl = write(
+        "add.irdl.mlir",
+        "irdl.dialect @kirin_py_binop {\n  irdl.operation @add {\n"
+        "    %0 = irdl.any\n    irdl.operands(lhs: %0, rhs: %0)\n"
+        "    irdl.results(result: %0)\n  }\n}\n",
+    )
+    expect(
+        "an IRDL error is reported at the op's file location",
+        run(
+            f"--irdl-file={irdl}",
+            "--allow-unregistered-dialect",
+            write(
+                "l1.mlir",
+                '%a = "kirin_py_binop.add"() : () -> i64 loc("kernel.py":7:2)\n',
+            ),
+        ),
+        accepted=False,
+        error="kernel.py:7:2: error: op expects exactly 2 operands",
+    )
+    named = write(
+        "l2.mlir",
+        '"test.f"() ({\n^bb0(%x: i64 loc("x"("kernel.py":3:4))):\n'
+        '  %z = "test.add"(%x, %x) : (i64, i64) -> i64 loc("z"("kernel.py":4:8))\n'
+        '  "test.ret"(%z) : (i64) -> ()\n}) : () -> ()\n',
+    )
+    expect(
+        "a name location keeps a value's name through mlir-opt",
+        run(
+            "--allow-unregistered-dialect",
+            "--mlir-print-op-generic",
+            "--mlir-use-nameloc-as-prefix",
+            named,
+        ),
+        accepted=True,
+        output='%z = "test.add"(%x, %x)',
+    )
+
+
 def main() -> None:
     print(f"mlir-opt: {MLIR_OPT}")
     print(run("--version").stdout.strip().splitlines()[0])
@@ -577,6 +666,8 @@ def main() -> None:
     syntax_order()
     name_clash()
     survey()
+    properties()
+    locations()
     rule("Result")
     if FAILURES:
         print(
