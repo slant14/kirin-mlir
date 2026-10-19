@@ -12,12 +12,19 @@ the corpus does not reach: each kind of type and payload, the two losses the
 export makes on purpose, and the refusals.
 
 Step 4 rebuilds statements, blocks and regions. Each kernel of the corpus,
-again from both writers, must come back structurally equal to its prepared
-copy by Kirin's own ``is_structurally_equal``, with what that does not
-compare checked as well: the operands each argument field reads, result
-types, the statement's own state, every reverse-use link (Kirin issue #707),
-and Kirin's ``verify``. Small hand-written modules check forward references,
-scoping, successors and the refusals.
+again from both writers, must come back as its prepared copy by
+:func:`assert_same_ir`: every statement's class, attributes, operands,
+successors, types and operand groups, compared value by value. Kirin's own
+``is_structurally_equal`` is not used, because it never looks inside a
+region. Also checked: the statement's own state, every reverse-use link
+(Kirin issue #707), and Kirin's ``verify``. Small hand-written modules check
+forward references, scoping, successors and the refusals.
+
+Step 5 makes the kernels. Each module comes back as its kernels, entry first,
+with the prepared copies' names, argument names (``%self``'s aside),
+argument and return types, and dialect group. Every ``@symbol`` comes back as
+the imported kernel of that name, so a recursive kernel holds itself, and
+every callee knows its callers.
 """
 
 import sys
@@ -25,6 +32,7 @@ import struct
 from collections import Counter, defaultdict
 
 import pytest
+import test_emit
 from kirin import ir, types
 from oracle import MLIR_OPT, SKIP_REASON
 from test_irdl import CORPUS
@@ -43,6 +51,7 @@ from kirin.ir.attrs.types import (
 )
 
 from kirin_mlir import (
+    SELF_NAME,
     TYPE_SCHEMA,
     TYPE_IMPORTERS,
     NameTable,
@@ -51,6 +60,7 @@ from kirin_mlir import (
     emit_mlir,
     emit_type,
     parse_type,
+    import_mlir,
     import_type,
     parse_module,
     pyclass_named,
@@ -417,9 +427,10 @@ def test_a_kernel_takes_its_declared_type_or_its_signature():
 
 def rebuilt(module, text: str) -> list[ir.Statement]:
     """The statements ``text`` holds, read back for ``module``'s dialects."""
-    symbols = {module.symbol(source): source for source in module.sources}
-    importer = MLIRImporter(NameTable.of(module.dialects), symbols)
-    return importer.module(parse_module(text))
+    importer = MLIRImporter(NameTable.of(module.dialects))
+    statements = importer.module(parse_module(text))
+    importer.resolve({module.symbol(source): source for source in module.sources})
+    return statements
 
 
 def operand_groups(stmt: ir.Statement) -> dict[str, int | tuple[int, ...]]:
@@ -451,21 +462,99 @@ def assert_use_links(stmt: ir.Statement) -> None:
         assert {(use.stmt, use.index) for use in value.uses} == readers[value]
 
 
+def same_attribute(got: ir.Attribute, want: ir.Attribute, symbol) -> bool:
+    """:func:`same`, but a kernel is compared by the symbol it was written as.
+
+    ``symbol`` names the kernel a prepared attribute holds, which is the
+    kernel the prepared copy was made from (``PreparedModule.sources``).
+    """
+    if isinstance(want, ir.PyAttr) and isinstance(want.data, ir.Method):
+        return (
+            isinstance(got, ir.PyAttr)
+            and isinstance(got.data, ir.Method)
+            and got.type == want.type
+            and got.data.sym_name == symbol(want.data)
+        )
+    return same(got, want)
+
+
+def assert_same_ir(got: ir.Statement, want: ir.Statement, symbol) -> None:
+    """``got`` is ``want``, statement by statement and value by value.
+
+    Kirin's ``is_structurally_equal`` cannot say this. A region records each
+    pair of its blocks as equal before comparing them, and a block returns at
+    once for a pair already recorded, so nothing inside a region is ever
+    compared: a function whose constant was changed, or whose statement was
+    deleted, still compares equal (``scripts/probe_kirin_ir.py``).
+
+    So the two are paired here, outermost first, in two passes. The first
+    checks the shape and maps every result, block argument and block of
+    ``want`` to ``got``'s; the second compares everything that refers to
+    them, so a value used before its definition is compared too.
+
+    A ``func.func``'s ``%self`` is left out, its type as well as its name
+    (issue 06, decisions 6 and 9). The text records neither, and preparation
+    can leave its type stale: :func:`assert_self_restored` checks what the
+    import gives it instead.
+    """
+    values: dict[ir.SSAValue, ir.SSAValue] = {}
+    blocks: dict[ir.Block, ir.Block] = {}
+    pairs: list[tuple[ir.Statement, ir.Statement]] = []
+
+    def shape(g: ir.Statement, w: ir.Statement) -> None:
+        assert type(g) is type(w), (g, w)
+        pairs.append((g, w))
+        assert len(g.results) == len(w.results)
+        values.update(zip(w.results, g.results))
+        assert len(g.regions) == len(w.regions)
+        for got_region, want_region in zip(g.regions, w.regions):
+            assert len(got_region.blocks) == len(want_region.blocks)
+            for got_block, want_block in zip(got_region.blocks, want_region.blocks):
+                blocks[want_block] = got_block
+                values.update(zip(want_block.args, got_block.args))
+                got_types = [a.type for a in got_block.args]
+                want_types = [a.type for a in want_block.args]
+                if isinstance(w, func.Function) and want_block is w.body.blocks[0]:
+                    got_types, want_types = got_types[1:], want_types[1:]
+                assert got_types == want_types, w
+                assert len(got_block.stmts) == len(want_block.stmts)
+                for got_stmt, want_stmt in zip(got_block.stmts, want_block.stmts):
+                    shape(got_stmt, want_stmt)
+
+    shape(got, want)
+    for g, w in pairs:
+        assert len(g.args) == len(w.args), w
+        assert all(values[a] is b for a, b in zip(w.args, g.args)), w
+        assert len(g.successors) == len(w.successors), w
+        assert all(blocks[a] is b for a, b in zip(w.successors, g.successors)), w
+        assert operand_groups(g) == operand_groups(w), w
+        assert [r.type for r in g.results] == [r.type for r in w.results], w
+        assert g.attributes.keys() == w.attributes.keys(), w
+        for key, value in w.attributes.items():
+            assert same_attribute(g.attributes[key], value, symbol), (w, key)
+
+
+def assert_self_restored(code: func.Function, prepared: ir.Method) -> None:
+    """``%self`` is back, typed as Kirin's ``Method.self_type`` types it.
+
+    That type is read off the signature. The prepared copy's own ``%self``
+    may differ: in 6 of the 25 kernels here, preparation's ``TypeInfer``
+    refined the signature's return type and left ``%self``'s as it was.
+    """
+    self_arg, *_ = code.body.blocks[0].args
+    assert self_arg.type == prepared.self_type
+    assert self_arg.name == prepared.callable_region.blocks[0].args[0].name
+    assert not self_arg.uses
+
+
 def assert_rebuilt(module, statements: list[ir.Statement]) -> None:
     """``statements`` are ``module``'s prepared kernels, rebuilt."""
     assert len(statements) == len(module.methods)
     for stmt, method in zip(statements, module.methods):
-        assert stmt.is_structurally_equal(method.code)
+        assert_same_ir(stmt, method.code, module.symbol)
+        assert_self_restored(stmt, method)
         assert_use_links(stmt)
-        self_arg, prepared_self = (
-            code.body.blocks[0].args[0] for code in (stmt, method.code)
-        )
-        assert self_arg.name == prepared_self.name
         for imported, prepared in zip(stmt.walk(), method.code.walk(), strict=True):
-            assert operand_groups(imported) == operand_groups(prepared)
-            assert [r.type for r in imported.results] == [
-                r.type for r in prepared.results
-            ]
             assert vars(imported).keys() == vars(prepared).keys()
             imported.verify()
             imported.verify_type()
@@ -705,3 +794,132 @@ def test_a_module_is_one_region_of_one_block():
     text = '"builtin.module"() ({\n^bb0(%a: !kirin.any):\n}) : () -> ()\n'
     with pytest.raises(MLIRImportError, match="one region of one block"):
         MLIRImporter(TABLE).module(parse_module(text))
+
+
+# -- step 5: kernels and symbols ---------------------------------------------
+
+
+def kernel_attributes(method: ir.Method) -> list[ir.PyAttr]:
+    """Every attribute of ``method``'s code that holds a kernel, in walk order."""
+    return [
+        attr
+        for stmt in method.code.walk()
+        for attr in stmt.attributes.values()
+        if isinstance(attr, ir.PyAttr) and isinstance(attr.data, ir.Method)
+    ]
+
+
+def callees(method: ir.Method) -> list[ir.Method]:
+    return [stmt.callee for stmt in method.code.walk() if isinstance(stmt, func.Invoke)]
+
+
+def assert_kernels_come_back(module, imported) -> None:
+    """``imported`` holds ``module``'s kernels, entry first, as Kirin methods."""
+    assert imported.entry is imported.methods[0]
+    for got, want in zip(imported.methods, module.methods, strict=True):
+        assert_same_ir(got.code, want.code, module.symbol)
+        assert got.sym_name == want.sym_name
+        assert got.arg_names == [SELF_NAME, *want.arg_names[1:]]
+        assert got.nargs == want.nargs
+        assert got.arg_types == want.arg_types
+        assert got.return_type == want.return_type
+        assert got.dialects.is_structurally_equal(want.dialects)
+        assert got.inferred
+        # The same kernels by name, with the same declared types; now each
+        # is the imported kernel, not the one the prepared copy was made from.
+        assert [(a.type, a.data.sym_name) for a in kernel_attributes(got)] == [
+            (a.type, module.symbol(a.data)) for a in kernel_attributes(want)
+        ]
+        assert all(
+            any(a.data is method for method in imported.methods)
+            for a in kernel_attributes(got)
+        )
+        callers = [m for m in imported.methods if any(c is got for c in callees(m))]
+        assert set(got.backedges) == set(callers)
+
+
+@pytest.mark.parametrize("write", WRITERS)
+@pytest.mark.parametrize("kernel", CORPUS, ids=ids)
+def test_every_module_comes_back_as_its_kernels_entry_first(kernel, write):
+    module = prepare_for_mlir(kernel)
+    imported = import_mlir(write(emit_mlir(module)), kernel.dialects)
+    assert_kernels_come_back(module, imported)
+
+
+def test_a_recursive_kernel_holds_itself():
+    (countdown,) = import_mlir(
+        emit_mlir(prepare_for_mlir(test_emit.countdown)), test_emit.countdown.dialects
+    ).methods
+    assert callees(countdown) == [countdown]
+    assert set(countdown.backedges) == {countdown}
+
+
+def test_a_symbol_attribute_keeps_its_place_in_the_dictionary():
+    """``@callee`` is read in the second pass and put back where it was."""
+    module = prepare_for_mlir(test_emit.branches)
+    entry = import_mlir(emit_mlir(module), test_emit.branches.dialects).entry
+    (invoke,) = [stmt for stmt in entry.code.walk() if isinstance(stmt, func.Invoke)]
+    (prepared,) = [
+        stmt for stmt in module.entry.code.walk() if isinstance(stmt, func.Invoke)
+    ]
+    assert list(invoke.attributes) == list(prepared.attributes) == ["callee", "purity"]
+
+
+def _branches_text() -> str:
+    return emit_mlir(prepare_for_mlir(test_emit.branches))
+
+
+def _line_of(text: str, fragment: str) -> int:
+    (line,) = [n for n, s in enumerate(text.splitlines(), 1) if fragment in s]
+    return line
+
+
+def _top_level_constant(text: str) -> str:
+    constant = (
+        '  %c = "kirin_py_constant.constant"() {value = 1 : i64} : () -> !kirin.any'
+    )
+    head, tail = text.rsplit("}) : () -> ()", 1)
+    return f"{head}{constant}\n}}) : () -> (){tail}"
+
+
+@pytest.mark.parametrize(
+    "edit, fragment, reason",
+    [
+        (
+            lambda text: text.replace("callee = @callee", "callee = @nope"),
+            "@nope",
+            "@nope names no kernel",
+        ),
+        (
+            lambda text: text.replace('sym_name = "callee"', 'sym_name = "branches"'),
+            '%7 = "kirin_func.func"',
+            "two kernels are named 'branches'",
+        ),
+        (
+            lambda text: text.replace('slots = ["x", "y"]', 'slots = ["x"]'),
+            '%0 = "kirin_func.func"',
+            "slots names 1 argument",
+        ),
+        (_top_level_constant, "%c = ", "only kernels"),
+    ],
+    ids=["unknown symbol", "a name twice", "slots too short", "not a kernel"],
+)
+def test_a_module_that_is_not_kernels_is_refused(edit, fragment, reason):
+    """Each refusal names the line its operation starts on."""
+    text = edit(_branches_text())
+    with pytest.raises(MLIRImportError, match=reason) as caught:
+        import_mlir(text, test_emit.branches.dialects)
+    assert caught.value.line == _line_of(text, fragment)
+
+
+def test_a_dialect_group_missing_a_dialect_is_refused():
+    without_binop = test_emit.branches.dialects.discard(py.binop.dialect)
+    with pytest.raises(MLIRImportError, match="belongs to no Kirin dialect"):
+        import_mlir(_branches_text(), without_binop)
+
+
+def test_a_dialect_group_whose_names_collide_is_refused():
+    """Step 2's note: the name table's export error becomes an import error."""
+    clashing = ir.DialectGroup([ir.Dialect("a.b"), ir.Dialect("a_b")])
+    with pytest.raises(MLIRImportError, match="cannot be named in MLIR"):
+        import_mlir(_branches_text(), clashing)

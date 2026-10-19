@@ -29,11 +29,17 @@ from kirin import ir, types
 from oracle import MLIR_OPT, SKIP_REASON, mlir_opt
 from test_irdl import hybrid
 from test_parse import canonical, operations
-from test_import import rebuilt, assert_rebuilt, assert_types_and_attributes_read_back
+from test_import import (
+    rebuilt,
+    assert_rebuilt,
+    assert_kernels_come_back,
+    assert_types_and_attributes_read_back,
+)
 
 from kirin_mlir import (
     NameTable,
     emit_mlir,
+    import_mlir,
     parse_module,
     generate_irdl,
     prepare_for_mlir,
@@ -282,3 +288,16 @@ def test_every_stim_program_is_rebuilt_as_its_prepared_copy(kernel, printed):
         assert result.returncode == 0, result.stderr
         text = result.stdout
     assert_rebuilt(module, rebuilt(module, text))
+
+
+@pytest.mark.parametrize("printed", [False, pytest.param(True, marks=needs_mlir)])
+@pytest.mark.parametrize("kernel", EVERY, ids=ids)
+def test_every_stim_program_comes_back_as_its_kernel(kernel, printed):
+    """Issue 06 step 5: ``import_mlir`` on what MLIR verified."""
+    module = prepare_for_mlir(kernel)
+    text = emit_mlir(module)
+    if printed:
+        result = hybrid(text, str(STIM_IRDL), "--mlir-print-op-generic")
+        assert result.returncode == 0, result.stderr
+        text = result.stdout
+    assert_kernels_come_back(module, import_mlir(text, kernel.dialects))

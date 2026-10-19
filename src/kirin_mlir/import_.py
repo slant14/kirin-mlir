@@ -38,22 +38,37 @@ read, so a successor may name a block that comes later.
 :func:`register_statement_import` for what the generic path cannot rebuild.
 Kirin ``func.func`` is the one: its ``%self`` argument was dropped on the way
 out, and :mod:`kirin_mlir.dialects.func` puts it back.
+
+**Kernels.** :func:`import_mlir` makes each top-level ``func.func`` a Kirin
+``Method``, the entry first, as the exporter writes them. A kernel may refer
+to itself or to one later in the text, by ``@symbol``, so those references
+are read in a second pass (:meth:`MLIRImporter.resolve`), once every kernel
+exists. Kirin's own deserializer breaks the same cycle the same way: each
+``Method`` is made with ``Method.__new__`` before the code that refers to it
+is complete, and initialised after.
 """
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import field, dataclass
 from collections.abc import Mapping, Callable
 
 from kirin import ir
 from kirin.decl import fields
+from kirin.dialects import func
 
 from . import parse
 from .emit import SEGMENT_SIZES
-from .attrs import import_statement_attributes
+from .attrs import import_statement_attribute, import_statement_attributes
 from .names import NameTable
+from .parse import parse_module
 from .types import import_type
-from .errors import MLIRImportError
+from .errors import MLIRExportError, MLIRImportError
+
+#: The name every imported kernel gives ``%self`` (issue 06, step 0, decision
+#: 6): Kirin's own for a decorated kernel. The text does not record it.
+SELF_NAME = "#self#"
 
 #: Hooks run on a statement once the generic path has built it, keyed by
 #: statement class. Populated by :func:`register_statement_import`.
@@ -88,22 +103,36 @@ class _Forward:
 
 
 @dataclass
+class _Deferred:
+    """A statement's ``@symbol`` attributes, read once every kernel exists."""
+
+    stmt: ir.Statement
+    #: The statement's attribute keys in the text's order, to keep it.
+    order: tuple[str, ...]
+    symbols: dict[str, parse.SymbolRefAttr]
+    line: int
+
+
+@dataclass
 class MLIRImporter:
     """Parsed MLIR generic form to Kirin IR.
 
-    Build it over the export's name table and call :meth:`module` once::
+    Build it over the export's name table, call :meth:`module` once, then
+    :meth:`resolve` with the kernel each ``@symbol`` stands for::
 
-        statements = MLIRImporter(NameTable.of(dialects)).module(parse_module(text))
+        importer = MLIRImporter(NameTable.of(dialects))
+        statements = importer.module(parse_module(text))
+        importer.resolve(symbols)
+
+    :func:`import_mlir` does all three, and makes the kernels.
 
     Args:
         names: the name table the module was emitted with, built over the
             same dialects.
-        symbols: the kernel each ``@symbol`` stands for. A reference to a
-            kernel not in it is refused.
     """
 
     names: NameTable
-    symbols: Mapping[str, ir.Method] = field(default_factory=dict)
+    _deferred: list[_Deferred] = field(default_factory=list, init=False)
     _values: dict[str, tuple[ir.SSAValue, int]] = field(
         default_factory=dict, init=False
     )
@@ -115,6 +144,9 @@ class MLIRImporter:
 
     def module(self, op: parse.Operation) -> list[ir.Statement]:
         """The statements of a ``builtin.module``, in order, not in any block.
+
+        Every attribute written as ``@symbol`` is left out until
+        :meth:`resolve`.
 
         Raises:
             MLIRImportError: if anything in it cannot be rebuilt faithfully,
@@ -139,6 +171,32 @@ class MLIRImporter:
         self._close(scope)
         self.finish()
         return statements
+
+    def resolve(self, symbols: Mapping[str, ir.Method]) -> None:
+        """Read every ``@symbol`` attribute, now that ``symbols`` holds each kernel.
+
+        The second pass. Each attribute is read as
+        :func:`kirin_mlir.attrs.import_statement_attribute` reads it, and the
+        statement's attributes keep the order the text gave them.
+
+        Raises:
+            MLIRImportError: if a symbol names no kernel in ``symbols``, with
+                the line of the operation that names it.
+        """
+        for deferred in self._deferred:
+            stmt = deferred.stmt
+            try:
+                resolved = {
+                    key: import_statement_attribute(type(stmt), key, attr, symbols)
+                    for key, attr in deferred.symbols.items()
+                }
+            except MLIRImportError as err:
+                raise err.at(deferred.line)
+            stmt.attributes = {
+                key: resolved[key] if key in resolved else stmt.attributes[key]
+                for key in deferred.order
+            }
+        self._deferred = []
 
     def finish(self) -> None:
         """Refuse a value that was used and never defined where it is visible."""
@@ -169,7 +227,14 @@ class MLIRImporter:
             regions = [self.region(region) for region in op.regions]
             successors = [self.block(label) for label in op.successors]
             entries = {k: v for k, v in op.attributes.items() if k != SEGMENT_SIZES}
-            attributes = import_statement_attributes(cls, entries, self.symbols)
+            symbols = {
+                key: attr
+                for key, attr in entries.items()
+                if isinstance(attr, parse.SymbolRefAttr)
+            }
+            attributes = import_statement_attributes(
+                cls, {k: v for k, v in entries.items() if k not in symbols}
+            )
             result_types = list(map(import_type, op.result_types))
             schema = fields(cls)
             _check_count("result", len(schema.results), len(result_types))
@@ -186,6 +251,8 @@ class MLIRImporter:
                 result_types=result_types,
                 args_slice=args_slice,
             )
+            if symbols:
+                self._deferred.append(_Deferred(stmt, tuple(entries), symbols, op.line))
             hook = STATEMENT_IMPORTS.get(cls)
             if hook is not None:
                 hook(stmt)
@@ -392,3 +459,95 @@ def _check_count(what: str, declared: int, found: int) -> None:
             f"the statement declares {declared} {what}(s), and the operation "
             f"has {found}"
         )
+
+
+# -- kernels -----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ImportedModule:
+    """Kernels read back from one MLIR module.
+
+    Args:
+        methods: the kernels in the order the text has them, so the entry
+            kernel first, as :func:`kirin_mlir.emit_mlir` writes a
+            :class:`kirin_mlir.PreparedModule`.
+    """
+
+    methods: tuple[ir.Method, ...]
+
+    @property
+    def entry(self) -> ir.Method:
+        """The kernel the module was exported from."""
+        return self.methods[0]
+
+
+def import_mlir(text: str, dialects: ir.DialectGroup) -> ImportedModule:
+    """Kirin kernels from MLIR generic form: the inverse of ``emit_mlir``::
+
+        module = import_mlir(emit_mlir(prepare_for_mlir(kernel)), kernel.dialects)
+
+    Every kernel gets ``dialects``, one group for the whole module (issue 06,
+    step 0, decision 4), because the text does not record a group per kernel.
+    Each kernel's ``arg_names`` are :data:`SELF_NAME` and its ``slots``, and it
+    is marked ``inferred``: its types are the ones ``prepare_for_mlir``'s
+    ``TypeInfer`` gave it, and Kirin's inference of a call trusts them.
+
+    Raises:
+        MLIRImportError: if the text is not one the exporter writes, or
+            names a statement ``dialects`` does not have, with the line and,
+            where the parser found it, the column.
+    """
+    try:
+        names = NameTable.of(dialects)
+    except MLIRExportError as err:
+        raise MLIRImportError(
+            f"the dialect group cannot be named in MLIR: {err.message}"
+        ) from err
+    tree = parse_module(text)
+    importer = MLIRImporter(names)
+    statements = importer.module(tree)
+
+    methods: dict[str, ir.Method] = {}
+    for op, code in zip(tree.regions[0].blocks[0].operations, statements):
+        if not isinstance(code, func.Function):
+            raise MLIRImportError(
+                "the exporter writes only kernels, kirin_func.func, at the top "
+                f"of a module, and this is {op.name}",
+                line=op.line,
+            )
+        if code.sym_name in methods:
+            raise MLIRImportError(
+                f"two kernels are named {code.sym_name!r}, so @{code.sym_name} "
+                "would not say which",
+                line=op.line,
+            )
+        if len(code.slots) != len(code.body.blocks[0].args) - 1:
+            raise MLIRImportError(
+                f"slots names {len(code.slots)} argument(s), and the kernel "
+                f"takes {len(code.body.blocks[0].args) - 1}",
+                line=op.line,
+            )
+        # Made now, initialised below: the code may refer to this kernel, or
+        # to one later in the text, so the object must exist first. Every
+        # kernel gets its backedges here, so that initialising one kernel can
+        # record itself as the caller of another that is not initialised yet.
+        method = methods[code.sym_name] = ir.Method.__new__(ir.Method)
+        method.code = code
+        method.backedges = weakref.WeakSet()
+
+    importer.resolve(methods)
+    for name, method in methods.items():
+        ir.Method.__init__(
+            method,
+            dialects,
+            method.code,
+            sym_name=name,
+            arg_names=[SELF_NAME, *method.code.slots],
+            inferred=True,
+        )
+    # Initialising a kernel resets its backedges, which loses any recorded by
+    # a caller initialised before it, so they are recorded again, last.
+    for method in methods.values():
+        method.update_backedges()
+    return ImportedModule(tuple(methods.values()))

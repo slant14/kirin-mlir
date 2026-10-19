@@ -75,7 +75,10 @@ def restore_self(node: func.Function) -> None:
     Its type is the function's own, read off the signature as Kirin's
     ``Method.self_type`` reads it, and its name hint is ``<sym_name>_self``,
     as Kirin's lowering names it. Nothing in the body uses it: the export
-    refused a function that did.
+    refused a function that did. The prepared copy's own ``%self`` can carry
+    an older type, because Kirin's ``TypeInfer`` refines the signature and
+    not ``%self``; the text records only the signature (issue 06,
+    decision 9).
     """
     blocks = node.body.blocks
     if not blocks:

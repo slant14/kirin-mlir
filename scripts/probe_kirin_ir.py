@@ -182,6 +182,30 @@ def main() -> None:
     print(f"  PyAttr(1) == PyAttr(1, Any): {ir.PyAttr(1) == ir.PyAttr(1, types.Any)}")
     print("-> the import must rebuild what the text does not say (issue 06, step 0)")
 
+    rule("Structural equality never looks inside a region (2026-10-19)")
+    from kirin.passes import TypeInfer
+    from kirin.dialects import py
+
+    edited = mixed.similar()
+    (constant,) = [
+        s for s in edited.callable_region.walk() if isinstance(s, py.Constant)
+    ]
+    constant.attributes["value"] = ir.PyAttr(2.5)
+    print(f"  x + 1.5 equal to x + 2.5: {mixed.is_structurally_equal(edited)}")
+    print(
+        "  their regions equal: "
+        f"{mixed.callable_region.is_structurally_equal(edited.callable_region)}"
+    )
+    print("-> Region records each block pair before comparing it, and Block returns")
+    print("   at once for a recorded pair; issue 06 compares bodies itself")
+    inferred = untyped.similar()
+    TypeInfer(inferred.dialects)(inferred)
+    print(
+        f"  after TypeInfer, %self: {inferred.callable_region.blocks[0].args[0].type}"
+    )
+    print(f"  Method.self_type       : {inferred.self_type}")
+    print("-> TypeInfer refines the signature, not %self; the import uses self_type")
+
     rule("External registration works (why this package need not fork Kirin)")
     from kirin.dialects import func
 
