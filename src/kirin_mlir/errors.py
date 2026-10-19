@@ -92,8 +92,27 @@ class MLIRImportError(Exception):
         self.message = message
         self.line = line
         self.column = column
-        where = "" if line is None else f"line {line}, column {column}: "
-        super().__init__(where + message)
+        super().__init__(self._render())
+
+    def at(self, line: int | None, column: int | None = None) -> MLIRImportError:
+        """Fill in the location if it is still unknown, in place.
+
+        As :meth:`MLIRExportError.attach` does: a name or attribute lookup
+        does not know where in the text it was asked about, and the frame
+        that does fills it in on the way out.
+        """
+        if self.line is None:
+            self.line = line
+            self.column = column
+            self.args = (self._render(),)
+        return self
+
+    def _render(self) -> str:
+        if self.line is None:
+            return self.message
+        if self.column is None:
+            return f"line {self.line}: {self.message}"
+        return f"line {self.line}, column {self.column}: {self.message}"
 
 
 def _stmt_name(stmt: Any) -> str:

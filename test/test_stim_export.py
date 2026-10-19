@@ -28,7 +28,7 @@ import pytest
 from kirin import ir, types
 from oracle import MLIR_OPT, SKIP_REASON, mlir_opt
 from test_irdl import hybrid
-from test_parse import canonical
+from test_parse import canonical, operations
 
 from kirin_mlir import (
     NameTable,
@@ -223,3 +223,31 @@ def test_a_corrupted_program_is_rejected_only_because_of_the_stim_irdl(corrupt, 
     result = hybrid(text, str(STIM_IRDL))
     assert result.returncode != 0
     assert error in result.stderr
+
+
+# -- read back (issue 06) -------------------------------------------------------
+
+
+def test_every_stim_name_maps_back_to_its_statement():
+    """Issue 06 step 2, where 44 of stim's 53 names lose case or dots."""
+    table = NameTable.of(bell.dialects)
+    statements = [stmt for dialect in bell.dialects.data for stmt in dialect.stmts]
+    assert all(table.statement(table.operation(stmt)) is stmt for stmt in statements)
+    assert table.statement("kirin_stim_gate.sqrt_x") is gate.SqrtX
+    assert table.statement("kirin_stim_aux.constant_int").name == "constant.int"
+
+
+@pytest.mark.parametrize("kernel", EVERY, ids=ids)
+def test_every_parsed_stim_operation_names_the_statement_it_came_from(kernel):
+    module = prepare_for_mlir(kernel)
+    table = NameTable.of(module.dialects)
+    tree = parse_module(emit_mlir(module))
+    parsed = Counter(
+        table.statement(op.name)
+        for op in operations(tree)
+        if op.name != "builtin.module"
+    )
+    expected = Counter(
+        type(stmt) for method in module.methods for stmt in method.code.walk()
+    )
+    assert parsed == expected
