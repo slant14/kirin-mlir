@@ -10,7 +10,8 @@ Requires kirin-toolchain to be importable. Nothing here writes to the Kirin
 checkout; it only imports and inspects.
 """
 
-from kirin import types
+from kirin import ir, types, lowering
+from kirin.decl import info, statement
 from kirin.prelude import basic, basic_no_opt, structural_no_opt
 
 
@@ -55,6 +56,28 @@ def loop(n: int):
 @basic(typeinfer=True)
 def mixed(x: int) -> float:
     return x + 1.5
+
+
+probe = ir.Dialect("probe_pairing")
+
+
+@statement(dialect=probe)
+class Pair(ir.Statement):
+    """A group of arguments before another argument, like stim's DETECTOR."""
+
+    name = "pair"
+    traits = frozenset({lowering.FromPythonCall()})
+    xs: tuple[ir.SSAValue, ...] = info.argument(types.Int)
+    label: ir.SSAValue = info.argument(types.String)
+
+
+@lowering.wraps(Pair)
+def pair(xs: tuple[int, ...], label: str) -> None: ...
+
+
+@basic_no_opt.add(probe)
+def pairing():
+    pair(xs=(1, 2), label="a")
 
 
 def result_types(method):
@@ -135,6 +158,53 @@ def main() -> None:
             f"result fields {list(schema.results)}, hand-written __init__ {handwritten}"
         )
     print("-> tuple.new takes operands and unpack has results that no field declares")
+
+    rule("Type inference pairs each value with its own field (2026-10-13)")
+    from kirin.analysis import TypeInference
+
+    stmt = next(s for s in pairing.callable_region.walk() if isinstance(s, Pair))
+    frame, _ = TypeInference(pairing.dialects).run(pairing)
+    print(f"  declared: { {n: str(f.type) for n, f in fields(Pair).args.items()} }")
+    print(
+        f"  inferred: {[str(frame.get(v)) for v in stmt.args]} for xs=(1, 2), label='a'"
+    )
+    print("-> before 0.22.17 the 2 was paired with label's type: Bottom (issue 05)")
+
+    rule("What structural equality compares that the export drops (2026-10-18)")
+    copy = typed.similar()
+    print(f"  typed.arg_names: {typed.arg_names}")
+    print(f"  equal to its own copy: {typed.is_structurally_equal(copy)}")
+    copy.arg_names = ["typed_self", *typed.arg_names[1:]]
+    print(f"  equal after renaming only %self: {typed.is_structurally_equal(copy)}")
+    print(
+        f"  a kernel held by py.constant is typed {py.constant.Constant(typed).value.type}"
+    )
+    print(f"  PyAttr(1) == PyAttr(1, Any): {ir.PyAttr(1) == ir.PyAttr(1, types.Any)}")
+    print("-> the import must rebuild what the text does not say (issue 06, step 0)")
+
+    rule("Structural equality never looks inside a region (2026-10-19)")
+    from kirin.passes import TypeInfer
+    from kirin.dialects import py
+
+    edited = mixed.similar()
+    (constant,) = [
+        s for s in edited.callable_region.walk() if isinstance(s, py.Constant)
+    ]
+    constant.attributes["value"] = ir.PyAttr(2.5)
+    print(f"  x + 1.5 equal to x + 2.5: {mixed.is_structurally_equal(edited)}")
+    print(
+        "  their regions equal: "
+        f"{mixed.callable_region.is_structurally_equal(edited.callable_region)}"
+    )
+    print("-> Region records each block pair before comparing it, and Block returns")
+    print("   at once for a recorded pair; issue 06 compares bodies itself")
+    inferred = untyped.similar()
+    TypeInfer(inferred.dialects)(inferred)
+    print(
+        f"  after TypeInfer, %self: {inferred.callable_region.blocks[0].args[0].type}"
+    )
+    print(f"  Method.self_type       : {inferred.self_type}")
+    print("-> TypeInfer refines the signature, not %self; the import uses self_type")
 
     rule("External registration works (why this package need not fork Kirin)")
     from kirin.dialects import func

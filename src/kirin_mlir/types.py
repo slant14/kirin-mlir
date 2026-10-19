@@ -34,10 +34,16 @@ The family::
     !kirin.anymethod                             TypeofMethodType
 
 ``TypeVar`` has no spelling of its own -- see :func:`_emit_typevar`.
+
+The way back (issue 06) is :func:`import_type`, one importer per mnemonic in
+:data:`TYPE_IMPORTERS`, kept beside the handlers for the same reason as the
+schema. A class comes back through :func:`pyclass_named`, which never imports
+a module.
 """
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 from dataclasses import dataclass
 from collections.abc import Callable
@@ -57,8 +63,9 @@ from kirin.ir.attrs.types import (
     TypeofMethodType,
 )
 
-from .errors import MLIRExportError
-from .values import escape_string, emit_python_value
+from . import parse
+from .errors import MLIRExportError, MLIRImportError
+from .values import escape_string, emit_python_value, import_python_value
 
 #: The MLIR dialect namespace these types live in. Kirin's own ``func``, ``cf``
 #: and ``scf`` are emitted out-of-tree for the same reason (ADR 0001,
@@ -291,3 +298,206 @@ def is_type_attribute(attr: Attribute) -> bool:
     though it only ever appears inside one.
     """
     return isinstance(attr, (TypeAttribute, Vararg))
+
+
+# -- the way back (issue 06) --------------------------------------------------
+
+
+def pyclass_named(name: str) -> PyClass:
+    """The ``PyClass`` whose class :func:`qualified_name` names ``name``.
+
+    Its inverse, for the import. Looked up first among the classes Kirin has
+    made types of in this process: that is Kirin's own interning table, so a
+    class comes back with the ``display_name`` and ``prefix`` it was
+    registered with, and ``builtins.NoneType``, which no module holds as an
+    attribute, is found. Then among the modules already imported, so a class
+    that only a kernel's annotations name is found before Kirin has seen it.
+
+    It never imports a module. The text chose the name, and importing a
+    module runs that module's code.
+
+    Raises:
+        MLIRImportError: if no class loaded in this process has that name.
+    """
+    # PyClassMeta keeps the table as a private attribute; there is no public
+    # view of it. Without it, only the module search below is left.
+    for typ, pyclass in list(getattr(PyClass, "_cache", {}).items()):
+        if _is_named(typ, name):
+            return pyclass
+    parts = name.split(".")
+    for split in range(len(parts) - 1, 0, -1):
+        found: Any = sys.modules.get(".".join(parts[:split]))
+        for part in parts[split:]:
+            found = getattr(found, part, None)
+        if isinstance(found, type) and _is_named(found, name):
+            return PyClass(found)
+    raise MLIRImportError(
+        f"no class named {name!r} is loaded in this process; the import never "
+        "imports a module the text names, so import the one that defines it "
+        "first"
+    )
+
+
+def _is_named(typ: type, name: str) -> bool:
+    try:
+        return qualified_name(typ) == name
+    except MLIRExportError:
+        return False
+
+
+def import_type(typ: parse.Type) -> TypeAttribute:
+    """The Kirin type :func:`emit_type` wrote as ``typ``.
+
+    Its inverse, for the import, and exact but for two losses that are the
+    export's, not choices the import could make differently. A ``TypeVar``
+    was written as its bound (:func:`_emit_typevar`) and comes back as the
+    bound. A ``FunctionType`` whose return type was unspecified (``None``)
+    was written as returning ``!kirin.any`` and comes back so, which Kirin
+    does not count as equal. A prepared module has neither today.
+
+    Raises:
+        MLIRImportError: for anything :func:`emit_type` never writes: a
+            builtin MLIR type, another dialect's type, an unknown mnemonic,
+            parameters of the wrong number or kind, or ``!kirin.vararg``
+            anywhere but last among a ``!kirin.generic``'s arguments.
+    """
+    result = _import_type(typ)
+    if isinstance(result, Vararg):
+        raise MLIRImportError(
+            f"!{DIALECT}.vararg is a type only as the last argument of a "
+            f"!{DIALECT}.generic"
+        )
+    return result
+
+
+def _import_type(typ: parse.Type) -> TypeAttribute | Vararg:
+    """:func:`import_type`, letting a ``Vararg`` through for the caller to place."""
+    if not isinstance(typ, parse.DialectType):
+        raise MLIRImportError(
+            f"found the builtin type {typ}; the exporter writes every Kirin type "
+            f"as a !{DIALECT}.* type"
+        )
+    if typ.dialect != DIALECT:
+        raise MLIRImportError(
+            f"found {typ}, which is not a Kirin type; the exporter writes every "
+            f"Kirin type as a !{DIALECT}.* type"
+        )
+    schema = TYPE_SCHEMA.get(typ.name)
+    if schema is None:
+        raise MLIRImportError(
+            f"found {typ}, which is not one of the !{DIALECT}.* types: "
+            f"{', '.join(sorted(TYPE_SCHEMA))}"
+        )
+    if len(typ.params) != len(schema.parameters):
+        raise MLIRImportError(
+            f"{schema.spelling} takes {len(schema.parameters)} parameter(s), and "
+            f"{len(typ.params)} were found"
+        )
+    return TYPE_IMPORTERS[typ.name](*typ.params)
+
+
+def _type_parameter(attr: parse.Attribute, mnemonic: str) -> TypeAttribute:
+    if not isinstance(attr, parse.TypeAttr):
+        raise MLIRImportError(f"a parameter of !{DIALECT}.{mnemonic} must be a type")
+    return import_type(attr.type)
+
+
+def _type_list(
+    attr: parse.Attribute, mnemonic: str, *, vararg_last: bool = False
+) -> list[TypeAttribute | Vararg]:
+    if not isinstance(attr, parse.ArrayAttr) or not all(
+        isinstance(element, parse.TypeAttr) for element in attr.elements
+    ):
+        raise MLIRImportError(
+            f"a parameter of !{DIALECT}.{mnemonic} must be an array of types"
+        )
+    types = [_import_type(element.type) for element in attr.elements]
+    for index, typ in enumerate(types):
+        if isinstance(typ, Vararg) and not (vararg_last and index == len(types) - 1):
+            raise MLIRImportError(
+                f"!{DIALECT}.vararg is a type only as the last argument of a "
+                f"!{DIALECT}.generic"
+            )
+    return types
+
+
+def _import_any() -> AnyType:
+    return AnyType()
+
+
+def _import_bottom() -> BottomType:
+    return BottomType()
+
+
+def _import_pyclass(name: parse.Attribute) -> PyClass:
+    if not isinstance(name, parse.StringAttr):
+        raise MLIRImportError(
+            f"the parameter of !{DIALECT}.pyclass must be the class's qualified "
+            "name, as a string"
+        )
+    return pyclass_named(name.value)
+
+
+def _import_literal(value: parse.Attribute, typ: parse.Attribute) -> Literal:
+    datatype = _type_parameter(typ, "literal")
+    data = import_python_value(value, datatype)
+    try:
+        return Literal(data, datatype)
+    except ValueError:
+        raise MLIRImportError(
+            f"a literal's value must be hashable, and a {type(data).__name__} " "is not"
+        ) from None
+
+
+def _import_union(members: parse.Attribute) -> TypeAttribute:
+    # Kirin's Union simplifies on construction, as it did before export, so
+    # the members the exporter wrote rebuild the same union.
+    types = _type_list(members, "union")
+    if len(types) < 2:
+        raise MLIRImportError(
+            f"!{DIALECT}.union has at least two members; the exporter writes a "
+            "union of one as that type and of none as !kirin.bottom"
+        )
+    return Union(types)
+
+
+def _import_vararg(element: parse.Attribute) -> Vararg:
+    return Vararg(_type_parameter(element, "vararg"))
+
+
+def _import_generic(body: parse.Attribute, args: parse.Attribute) -> Generic:
+    body_type = _type_parameter(body, "generic")
+    if not isinstance(body_type, PyClass):
+        raise MLIRImportError(
+            f"the body of !{DIALECT}.generic must be a !{DIALECT}.pyclass"
+        )
+    return Generic(body_type, *_type_list(args, "generic", vararg_last=True))
+
+
+def _import_function_type(
+    params: parse.Attribute, result: parse.Attribute
+) -> FunctionType:
+    return FunctionType(
+        tuple(_type_list(params, "method")), _type_parameter(result, "method")
+    )
+
+
+def _import_typeof_method() -> TypeofMethodType:
+    return TypeofMethodType()
+
+
+#: The inverse of :data:`TYPE_HANDLERS`, keyed by mnemonic like
+#: :data:`TYPE_SCHEMA`, which fixes how many parameters each importer takes.
+#: ``TypeVar`` has no entry, having no mnemonic. ``test/test_import.py`` fails
+#: if the keys ever differ from the schema's.
+TYPE_IMPORTERS: dict[str, Callable[..., TypeAttribute | Vararg]] = {
+    "any": _import_any,
+    "bottom": _import_bottom,
+    "pyclass": _import_pyclass,
+    "literal": _import_literal,
+    "union": _import_union,
+    "vararg": _import_vararg,
+    "generic": _import_generic,
+    "method": _import_function_type,
+    "anymethod": _import_typeof_method,
+}

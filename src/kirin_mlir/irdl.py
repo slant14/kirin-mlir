@@ -18,24 +18,34 @@ successors or ``IsTerminator``. Every other dialect is left out and reported,
 along with the statement that excluded it, and its ops are parsed under
 ``--allow-unregistered-dialect`` and not verified.
 
-**Counts, presence and well-formed types, not type constraints.** Each
-operand, result and attribute is constrained by ``irdl.any``, with its own
-variable. What gets verified is the number of operands and results, that
-every declared attribute is present, and, through the ``@kirin`` type dialect,
-that every ``!kirin.*`` type is well formed. Kirin's field types are lattice
+**Counts, presence and Kirin types, not Kirin's type constraints.** What
+gets verified is the number of operands and results, that every declared
+attribute is present, that every operand and result has some ``!kirin.*``
+type, and, through the ``@kirin`` type dialect, that each one is well formed.
+Which ``!kirin.*`` type is not checked. Kirin's field types are lattice
 bounds (an operand typed ``bool`` may be ``Literal(True)`` or a ``Union`` of
-literals), and IRDL cannot check subtyping. A ``TypeVar`` shared between
-fields must not become a shared IRDL variable, because IRDL reads that as
-"equal" and Kirin does not: ``x + 1.5`` is ``py.binop.add(int, float) ->
-float``, though ``lhs``, ``rhs`` and ``result`` all declare ``T``.
+literals), and IRDL cannot check subtyping. Every field gets its own
+constraint variables, because IRDL binds a variable to the first type it
+meets, so a shared one means "equal", and Kirin does not mean that: ``x +
+1.5`` is ``py.binop.add(int, float) -> float``, though ``lhs``, ``rhs`` and
+``result`` all declare ``T``. Attributes are builtin attributes, so each is
+``irdl.any``.
+
+**One place IRDL checks too much.** A variadic group has one constraint for
+all its operands, so the binding makes every operand of the group share a
+type. MLIR then rejects ``(x, 1.5)``, a ``py.tuple.new`` of an ``int`` and a
+``float``, which Kirin accepts. IRDL in MLIR 23 has no way to say otherwise,
+and ODS's ``Variadic<AnyType>`` does not bind, so issue 07 phase A lifts it.
+The report says so (``scripts/probe_mlir_irdl.py``, section 11).
 
 **Shapes the fields do not declare.** Kirin's generated ``__init__`` creates
 exactly the declared fields. A hand-written one can create more:
 ``py.tuple.new`` declares no argument fields but takes its elements as
 operands, and ``py.unpack.unpack`` declares no result fields but has one result
 per name. Where a hand-written ``__init__`` declares no operands (or no
-results), one variadic group is declared instead. That checks less, but it
-never rejects what Kirin can build. Each case is reported.
+results), one variadic group is declared instead. That checks less, and
+it accepts any number of operands or results Kirin can build. Each case is
+reported.
 
 **Every trait is reported as not expressed**, because IRDL expresses none:
 ``Pure``, ``IsTerminator``, ``SSACFG`` and the rest. Issue 07 phase A takes
@@ -152,7 +162,7 @@ def generate_irdl(dialects: ir.DialectGroup | Iterable[ir.Dialect]) -> Generated
                 loose[full] = missing
         body.append(f"irdl.dialect @{names.namespace(dialect)} {{\n{''.join(ops)}}}\n")
 
-    header = _report(excluded, traits, loose)
+    header = _report(_sources(registered), excluded, traits, loose)
     return GeneratedIRDL(
         header + "\n" + "".join(body),
         tuple(d.name for d in registered),
@@ -172,28 +182,37 @@ def _operation(op: str, stmt: type[ir.Statement]) -> tuple[str, tuple[str, ...]]
     lines: list[str] = []
     missing: list[str] = []
 
-    def variable() -> str:
+    def variable(constraint: str = "irdl.any") -> str:
         # A fresh variable per field: reusing one would mean "equal".
         name = f"%{len(lines)}"
-        lines.append(f"    {name} = irdl.any\n")
+        lines.append(f"    {name} = {constraint}\n")
         return name
+
+    def kirin_type() -> str:
+        # Some !kirin.* type. Its bases are fresh per field too: a base shared
+        # by two fields would bind to the first field's type.
+        bases = [
+            variable(f"irdl.base @{DIALECT}::@{schema.mnemonic}")
+            for schema in TYPE_SCHEMA.values()
+        ]
+        return variable(f"irdl.any_of({', '.join(bases)})")
 
     what = f"statement {stmt.dialect.name if stmt.dialect else '?'}.{stmt.name}"
     operands = [
         f"{checked(arg.name, f'operand {arg.name!r} of {what}')}: "
-        f"{'variadic ' if arg.group else ''}{variable()}"
+        f"{'variadic ' if arg.group else ''}{kirin_type()}"
         for arg in schema.args.values()
     ]
     if not operands and handwritten:
-        operands = [f"args: variadic {variable()}"]
+        operands = [f"args: variadic {kirin_type()}"]
         missing.append("operands")
 
     results = [
-        f"{checked(name, f'result {name!r} of {what}')}: {variable()}"
+        f"{checked(name, f'result {name!r} of {what}')}: {kirin_type()}"
         for name in schema.results
     ]
     if not results and handwritten:
-        results = [f"results: variadic {variable()}"]
+        results = [f"results: variadic {kirin_type()}"]
         missing.append("results")
 
     attributes = [f'"{key}" = {variable()}' for key in schema.attributes]
@@ -245,21 +264,30 @@ def _parameter(mnemonic: str, description: str) -> tuple[str, str]:
 
 
 def _report(
+    sources: str,
     excluded: list[Exclusion],
     traits: dict[str, tuple[str, ...]],
     loose: dict[str, tuple[str, ...]],
 ) -> str:
     lines = [
         "IRDL for Kirin dialects, generated by kirin-mlir from the statement",
-        f"declarations of kirin-toolchain {_kirin_version()}. Do not edit; regenerate.",
+        f"declarations of {sources}.",
+        "Do not edit; regenerate.",
         "",
         "Checked: operand and result counts, that each declared attribute is",
-        "present, and that every !kirin.* type is well formed.",
+        "present, that every operand and result has a !kirin.* type, and that",
+        "every !kirin.* type is well formed.",
         "",
-        "Not checked: operand, result and attribute types. Each is irdl.any, with",
-        "its own variable. Kirin's field types are lattice bounds, which IRDL",
-        "cannot check, and a TypeVar shared between fields does not mean equal",
-        "types in Kirin.",
+        "Not checked: which !kirin.* type, and attribute types. Kirin's field",
+        "types are lattice bounds, which IRDL cannot check, and a TypeVar shared",
+        "between fields does not mean equal types in Kirin, so every field has",
+        "its own constraint.",
+        "",
+        "Checked too strictly: IRDL binds a constraint to the first type it",
+        "meets, and a variadic group has one constraint for all its operands.",
+        "So MLIR rejects a group whose operands differ in type, such as the",
+        "tuple (x, 1.5), although Kirin accepts it. IRDL cannot say otherwise;",
+        "a C++ dialect can (issue 07 phase A).",
     ]
     if excluded:
         lines += [
@@ -285,8 +313,32 @@ def _report(
     return "".join(f"// {line}".rstrip() + "\n" for line in lines)
 
 
-def _kirin_version() -> str:
+def _sources(dialects: Iterable[ir.Dialect]) -> str:
+    """The installed distributions whose statement declarations were read.
+
+    Always ``kirin-toolchain``, whose ``decl`` schema every dialect uses. A
+    dialect declared in another distribution, such as bloqade's ``stim.*``,
+    adds that one, so a checked-in file says what it must be regenerated after.
+    """
+    owners = metadata.packages_distributions()
+    shipped: dict[str, set[str]] = {}
+    found = {"kirin-toolchain"}
+    for module in {stmt.__module__ for d in dialects for stmt in d.stmts}:
+        path = module.replace(".", "/")
+        for dist in owners.get(module.partition(".")[0], ()):
+            if dist not in shipped:
+                files = metadata.distribution(dist).files or ()
+                shipped[dist] = {str(f) for f in files}
+            if {f"{path}.py", f"{path}/__init__.py"} & shipped[dist]:
+                found.add(dist)
+    others = sorted(found - {"kirin-toolchain"})
+    return " and ".join(
+        f"{dist} {_version(dist)}" for dist in ["kirin-toolchain", *others]
+    )
+
+
+def _version(dist: str) -> str:
     try:
-        return metadata.version("kirin-toolchain")
+        return metadata.version(dist)
     except metadata.PackageNotFoundError:
         return "(unknown version)"

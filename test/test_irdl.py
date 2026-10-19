@@ -49,6 +49,12 @@ def pair(x: int, y: int):
 CORPUS = [*EVERY, mixed, pair]
 
 
+@basic(typeinfer=True)
+def mixed_pair(x: int):
+    """``py.tuple.new(int, float)``: one variadic group, two types."""
+    return (x, 1.5)
+
+
 def ids(kernel: ir.Method) -> str:
     return kernel.sym_name
 
@@ -168,6 +174,11 @@ def _malform_a_type(module):
     )
 
 
+def _use_a_builtin_type(module):
+    """Every ``int`` written as ``i64``: well formed, but not a Kirin type."""
+    return emit_mlir(module).replace('!kirin.pyclass<"builtins.int">', "i64")
+
+
 @needs_mlir
 @pytest.mark.parametrize(
     "corrupt, error",
@@ -175,8 +186,14 @@ def _malform_a_type(module):
         (_drop_an_operand, "expects exactly 2 operands"),
         (_drop_an_attribute, 'attribute "value" is expected'),
         (_malform_a_type, "expected base attribute 'builtin.string'"),
+        (_use_a_builtin_type, "'i64' does not satisfy the constraint"),
     ],
-    ids=["wrong operand count", "missing attribute", "malformed !kirin type"],
+    ids=[
+        "wrong operand count",
+        "missing attribute",
+        "malformed !kirin type",
+        "builtin type",
+    ],
 )
 def test_a_corrupted_module_is_rejected_only_because_of_the_irdl(
     corrupt, error, irdl_for
@@ -210,6 +227,25 @@ def test_a_shared_typevar_is_not_a_shared_constraint(irdl_for):
     assert add.lhs.type != add.rhs.type
     result = hybrid(emit_mlir(module), irdl_for(module))
     assert result.returncode == 0, result.stderr
+
+
+@needs_mlir
+def test_a_variadic_group_mixing_types_is_rejected_though_kirin_accepts_it(irdl_for):
+    """A known false rejection, pinned so a newer MLIR that lifts it is noticed.
+
+    IRDL binds a constraint to the first type it meets, and a variadic group
+    has one constraint for all its operands, so its operands must share a
+    type. Kirin's ``(x, 1.5)`` does not. The generated file's header says so,
+    and a C++ dialect lifts it (issue 07 phase A): ODS's ``Variadic<AnyType>``
+    does not bind.
+    """
+    module = prepare_for_mlir(mixed_pair)
+    text = emit_mlir(module)
+    assert mlir_opt(text, "--allow-unregistered-dialect").returncode == 0
+    result = hybrid(text, irdl_for(module))
+    assert result.returncode != 0
+    assert "but got '!kirin.pyclass<\"builtins.float\">'" in result.stderr
+    assert "Checked too strictly" in generate_irdl(module.dialects).text
 
 
 # -- what the generator reports -----------------------------------------------

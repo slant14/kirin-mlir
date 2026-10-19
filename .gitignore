@@ -1,6 +1,9 @@
 # Python
 __pycache__/
 *.py[cod]
+# Kirin 0.22.20+ pickles every decorated kernel beside its source file
+# (kirin/ir/compile_cache.py). KIRIN_COMPILE_CACHE_DIR=false turns it off.
+__kirincache__/
 *.egg-info/
 build/
 dist/
@@ -23,3 +26,6 @@ htmlcov/
 # Scratch
 scratch/
 *.tmp
+
+# Private planning notes
+plans.md

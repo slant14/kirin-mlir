@@ -26,6 +26,12 @@ proof that every name in it is safe to emit; the emitter (issue 03) and the
 IRDL generator (issue 04) both build one rather than calling :func:`mangle`
 themselves.
 
+The import (issue 06) reads names back through the same table. Because ``of``
+refused every collision, each full name belongs to exactly one statement, and
+:meth:`NameTable.statement` returns it. The inverse comes from the dialects'
+registries, never from the text: lowercasing lost the case, so
+``kirin_stim_gate.sqrt_x`` alone does not say ``SQRT_X``.
+
 ``scripts/probe_mlir_irdl.py`` reproduces the MLIR behaviour this rests on.
 """
 
@@ -38,7 +44,7 @@ from collections.abc import Iterable
 from kirin import ir
 
 from .types import DIALECT
-from .errors import MLIRExportError
+from .errors import MLIRExportError, MLIRImportError
 
 #: Every emitted namespace starts with this: the type dialect's own name plus
 #: an underscore, so no mangled namespace can equal ``kirin`` itself.
@@ -86,10 +92,12 @@ class NameTable:
         namespaces: Kirin dialect name to MLIR namespace.
         operations: statement class to full MLIR operation name,
             ``"namespace.op"``.
+        statements: the inverse of ``operations``, for the import.
     """
 
     namespaces: dict[str, str]
     operations: dict[type[ir.Statement], str]
+    statements: dict[str, type[ir.Statement]]
 
     @classmethod
     def of(cls, dialects: ir.DialectGroup | Iterable[ir.Dialect]) -> NameTable:
@@ -133,7 +141,8 @@ class NameTable:
                 claimed[op] = stmt
                 operations[stmt] = f"{namespace}.{op}"
 
-        return cls(namespaces, operations)
+        statements = {name: stmt for stmt, name in operations.items()}
+        return cls(namespaces, operations, statements)
 
     def namespace(self, dialect: ir.Dialect) -> str:
         """The MLIR namespace for ``dialect``."""
@@ -160,3 +169,32 @@ class NameTable:
                 stmt=None if isinstance(stmt, type) else stmt,
             )
         return name
+
+    def statement(self, name: str) -> type[ir.Statement]:
+        """The statement class a full MLIR operation name was emitted for.
+
+        The inverse of :meth:`operation`, for the import (issue 06).
+
+        Raises:
+            MLIRImportError: if no statement in the table has that name. The
+                message says whether the namespace is unknown or only the
+                operation, so a missing dialect is told apart from a typo.
+        """
+        stmt = self.statements.get(name)
+        if stmt is not None:
+            return stmt
+        namespace = name.partition(".")[0]
+        if not namespace.startswith(PREFIX):
+            raise MLIRImportError(
+                f"{name!r} is not a Kirin operation: every namespace the "
+                f"exporter writes starts with {PREFIX!r}"
+            )
+        owners = {ns: dialect for dialect, ns in self.namespaces.items()}
+        if namespace in owners:
+            raise MLIRImportError(
+                f"{name!r} names no statement of Kirin dialect {owners[namespace]!r}"
+            )
+        raise MLIRImportError(
+            f"{name!r} belongs to no Kirin dialect given to the import; pass the "
+            "dialect group the kernels were compiled with"
+        )

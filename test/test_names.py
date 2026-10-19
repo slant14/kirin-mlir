@@ -1,4 +1,9 @@
-"""Kirin names mangled into names MLIR accepts (ADR 0002 decision 1)."""
+"""Kirin names mangled into names MLIR accepts (ADR 0002 decision 1).
+
+And read back: issue 06, step 2, maps each name to its statement again.
+"""
+
+import re
 
 import pytest
 from kirin import ir
@@ -8,7 +13,7 @@ from kirin.dialects import cf, scf, func
 from kirin_dialects import public_dialects
 from kirin.dialects.py import binop, constant
 
-from kirin_mlir import PREFIX, NameTable, MLIRExportError, mangle
+from kirin_mlir import PREFIX, NameTable, MLIRExportError, MLIRImportError, mangle
 
 
 def _dialect(name: str, *stmt_names: str) -> ir.Dialect:
@@ -110,3 +115,49 @@ def test_a_statement_outside_the_table_is_refused():
         table.operation(func.Return)
     with pytest.raises(MLIRExportError, match="not in this name table"):
         table.namespace(func.dialect)
+
+
+# -- read back (issue 06, step 2) ----------------------------------------------
+
+
+def test_every_kirin_name_maps_back_to_its_statement():
+    """The inverse covers all of Kirin, read from the registries."""
+    dialects = public_dialects()
+    table = NameTable.of(dialects)
+    statements = [stmt for dialect in dialects for stmt in dialect.stmts]
+    assert all(table.statement(table.operation(stmt)) is stmt for stmt in statements)
+    assert len(table.statements) == len(statements)
+
+
+def test_the_case_comes_back_from_the_registry_not_the_text():
+    table = NameTable.of([_dialect("stim.gate", "CX", "SQRT_X")])
+    assert table.statement("kirin_stim_gate.sqrt_x").name == "SQRT_X"
+    assert table.statement("kirin_stim_gate.cx").name == "CX"
+
+
+@pytest.mark.parametrize(
+    "name, message",
+    [
+        ("kirin_py_binop.addd", "names no statement of Kirin dialect 'py.binop'"),
+        ("kirin_stim_gate.cx", "belongs to no Kirin dialect given to the import"),
+        ("arith.addi", "is not a Kirin operation"),
+        ("builtin.module", "is not a Kirin operation"),
+    ],
+)
+def test_a_name_outside_the_table_is_refused_on_the_way_in(name, message):
+    table = NameTable.of([binop.dialect])
+    with pytest.raises(MLIRImportError, match=re.escape(message)):
+        table.statement(name)
+
+
+def test_a_refusal_learns_its_line_from_the_caller():
+    """The table does not know where the name was; the import fills it in."""
+    table = NameTable.of([binop.dialect])
+    with pytest.raises(MLIRImportError) as caught:
+        try:
+            table.statement("kirin_py_binop.addd")
+        except MLIRImportError as err:
+            raise err.at(3)
+    assert caught.value.line == 3
+    assert str(caught.value).startswith("line 3: ")
+    assert caught.value.at(9).line == 3

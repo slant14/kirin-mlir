@@ -2,13 +2,25 @@
 name = "kirin-mlir"
 version = "0.1.0-dev"
 description = "Out-of-tree MLIR interoperability for the Kirin compiler toolchain."
-readme = "README.md"
+# No `readme`: README.md is not tracked, and hatchling refuses to build when
+# the file it names is missing, so a fresh clone could not be installed.
 requires-python = ">= 3.10"
 dependencies = [
-    # 0.22.16 is the latest release as of 2026-09-07; the reference checkout at
-    # ~/Documents/kirin is 0.23.0-dev (commit 0c559fd67). Re-check before pinning
-    # tighter — the emit and serialization internals this depends on are pre-1.0.
-    "kirin-toolchain>=0.22.16",
+    # At least 0.22.17: before it, type inference paired a statement's fields
+    # with its values position by position, so a group of arguments shifted
+    # every later value onto the wrong field's type, often Bottom (stim's
+    # DETECTOR coordinates; docs/assessment.md, 2026-10-13). Below 0.23 because
+    # bloqade-circuit, the stim extra, requires ~=0.22.11, and uv locks every
+    # extra together; re-check when bloqade moves to 0.23 (issue 05).
+    "kirin-toolchain>=0.22.17,<0.23",
+]
+
+[project.optional-dependencies]
+# Issue 05: export bloqade.stim kernels, and simulate them with stim to check
+# the export. bloqade-circuit is pre-1.0 like Kirin; 0.15.3 is what was measured.
+stim = [
+    "bloqade-circuit>=0.15.3,<0.16",
+    "stim>=1.15",
 ]
 
 [project.scripts]
@@ -42,7 +54,7 @@ xdsl = ["xdsl>=0.70"]
 
 [tool.pytest.ini_options]
 # Import from src/ directly. When iCloud Drive syncs this folder it marks .venv
-# hidden, and Python 3.13+ then skips the editable install's .pth file (README).
+# hidden, and Python then skips the editable install's .pth file (README).
 pythonpath = ["src"]
 
 [tool.isort]
@@ -54,6 +66,9 @@ src_paths = ["src/kirin_mlir"]
 
 [tool.black]
 line-length = 88
+# Python's floor, as for ruff. Without it Black targets every version up to the
+# newest it knows and warns that the venv's Python cannot check that output.
+target-version = ["py310"]
 
 [tool.ruff]
 target-version = "py310"
