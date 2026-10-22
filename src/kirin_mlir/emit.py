@@ -144,7 +144,8 @@ class EmitMLIR(EmitABC[MLIRFrame, str]):
         """
         if not isinstance(node, PreparedModule):
             raise _unprepared(node)
-        missing = node.dialects - self.dialects.data
+        # Only a dialect with statements can be emitted (see emit_mlir).
+        missing = {d for d in node.dialects if d.stmts} - self.dialects.data
         if missing:
             raise MLIRExportError(
                 "this emitter was built without the dialects "
@@ -398,7 +399,13 @@ def emit_mlir(module: PreparedModule) -> str:
     """
     if not isinstance(module, PreparedModule):
         raise _unprepared(module)
-    return EmitMLIR(ir.DialectGroup(module.dialects)).run(module)
+    # A dialect with no statements, such as lowering.cf, only teaches Kirin's
+    # Python front end, which emitting does not use. Building a group also
+    # builds that front end, and it refuses two dialects that lower the same
+    # syntax: a @structural kernel calling a @basic one brings scf and
+    # lowering.cf, which both lower ``for``. So those dialects are left out.
+    statements = [dialect for dialect in module.dialects if dialect.stmts]
+    return EmitMLIR(ir.DialectGroup(statements)).run(module)
 
 
 def _unprepared(node: object) -> MLIRExportError:

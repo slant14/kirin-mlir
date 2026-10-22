@@ -120,6 +120,16 @@ def structured_for(n: int) -> int:
     return total
 
 
+@structural(typeinfer=True)
+def structured_calls_basic(n: int) -> int:
+    """A ``@structural`` kernel calling a ``@basic`` one: ``scf`` and
+    ``lowering.cf`` in one module, which both lower ``for``."""
+    total = 0
+    for i in range(n):
+        total = total + callee(i)
+    return total
+
+
 #: Kernels inside the oracle's slice: integer arithmetic and comparison,
 #: constants, Kirin func and cf.
 SLICE = [branches, countdown, untyped, no_capture, const_capture, higher_order]
@@ -284,6 +294,17 @@ def test_a_closure_that_bypassed_preparation_is_refused():
     module = PreparedModule((closure,), (closure,))
     with pytest.raises(MLIRExportError, match=r"func\.lambda"):
         emit_mlir(module)
+
+
+@needs_mlir
+def test_kernels_of_different_dialect_groups_export_as_one_module():
+    """Found by the paper's generated programs: building one group over the
+    module's dialects failed, because ``scf`` and ``lowering.cf`` both lower
+    ``for``, before any text was written."""
+    module = prepare_for_mlir(structured_calls_basic)
+    assert {"scf", "lowering.cf"} <= {d.name for d in module.dialects}
+    result = parses(emit_mlir(module))
+    assert result.returncode == 0, result.stderr
 
 
 def test_a_use_with_no_definition_in_the_module_is_refused():

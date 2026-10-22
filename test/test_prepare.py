@@ -6,7 +6,13 @@ from kirin.prelude import basic, basic_no_opt
 from kirin.dialects import py, func
 from kirin.ir.attrs.types import TypeVar
 
-from kirin_mlir import PreparedModule, MLIRExportError, prepare_for_mlir
+from kirin_mlir import (
+    PreparedModule,
+    MLIRExportError,
+    emit_mlir,
+    import_mlir,
+    prepare_for_mlir,
+)
 
 
 @basic_no_opt
@@ -177,10 +183,34 @@ def test_a_closure_over_run_time_values_is_refused(kernel):
     assert isinstance(caught.value.stmt, func.Lambda)
 
 
-def test_two_kernels_with_one_symbol_name_are_refused():
-    """``first`` and ``second`` each hold a different function named ``inner``."""
-    with pytest.raises(MLIRExportError, match="both named 'inner'"):
-        prepare_for_mlir(clashing)
+def test_two_kernels_with_one_symbol_name_get_distinct_symbols():
+    """``first`` and ``second`` each hold a different function named ``inner``.
+
+    The second copy is renamed ``inner_1``, as MLIR's ``SymbolTable::insert``
+    renames a clashing symbol, its ``func.func`` and ``%self`` hint with it.
+    The kernels the caller holds keep their names.
+    """
+    module = prepare_for_mlir(clashing)
+    assert _symbols(module) == ["clashing", "first", "second", "inner", "inner_1"]
+    renamed = module.methods[4]
+    assert renamed.code.sym_name == "inner_1"
+    assert renamed.callable_region.blocks[0].args[0].name == "inner_1_self"
+    assert module.symbol(module.sources[4]) == "inner_1"
+    assert [source.sym_name for source in module.sources][3:] == ["inner", "inner"]
+
+
+def test_a_renamed_symbol_never_takes_a_name_already_in_the_module():
+    module = prepare_for_mlir(clashing)
+    first_inner, second_inner = module.methods[3:]
+    assert len({m.sym_name for m in module.methods}) == len(module.methods)
+    assert first_inner.sym_name != second_inner.sym_name
+
+
+def test_kernels_renamed_apart_compute_what_the_originals_do():
+    module = prepare_for_mlir(clashing)
+    imported = import_mlir(emit_mlir(module), clashing.dialects)
+    assert [kernel.sym_name for kernel in imported.methods] == _symbols(module)
+    assert all(imported.entry(x) == clashing(x) for x in range(-3, 4))
 
 
 def test_symbol_lookup_refuses_a_kernel_outside_the_module():
