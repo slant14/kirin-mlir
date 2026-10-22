@@ -350,6 +350,23 @@ irdl.dialect @kirin_stim_cf {
         ),
         accepted=True,
     )
+    # So IRDL's regions are not the obstacle; MLIR's terminator rule is. A
+    # registered region op is accepted when each of its blocks ends in an
+    # unregistered op, which might be a terminator: a QASM gate definition,
+    # whose body ends in Kirin's func.return, could be registered.
+    expect(
+        "a registered region op whose body ends in an unregistered op is accepted",
+        run(
+            f"--irdl-file={repeat_irdl}",
+            "--allow-unregistered-dialect",
+            write(
+                "rep3.mlir",
+                '"kirin_stim_cf.repeat"() ({\n  "kirin_stim_gate.h"() : () -> ()\n'
+                '  "kirin_func.return"() : () -> ()\n}) : () -> ()\n',
+            ),
+        ),
+        accepted=True,
+    )
     hybrid = write(
         "hybrid.mlir",
         f""""kirin_func.function"() ({{
@@ -694,6 +711,140 @@ def variadic_binding() -> None:
     )
 
 
+def unregistered_branch() -> None:
+    rule("12. --canonicalize erases the arguments of an unregistered branch's target")
+    # Region simplification finds terminators with hasTrait<IsTerminator>,
+    # which an unregistered op never has, so it never marks the arguments of
+    # their successors live; it erases the unused ones and leaves the branch
+    # passing them. mlir-opt exits 0, and the IR now passes a value to a block
+    # that takes none. Found by the paper's pass-reuse study on kirin_cf.
+    text = write(
+        "branch.mlir",
+        '"test.func"() ({\n^bb0(%c: i1, %v: i64):\n'
+        '  "test.cond_br"(%c, %v) [^bb1, ^bb2] : (i1, i64) -> ()\n'
+        '^bb1(%unused: i64):\n  "test.return"() : () -> ()\n'
+        '^bb2:\n  "test.return"() : () -> ()\n}) : () -> ()\n',
+    )
+    flags = ("--allow-unregistered-dialect", "--mlir-print-op-generic")
+    expect(
+        "--canonicalize erases ^bb1's argument and keeps the operand passed to it",
+        run(*flags, "--canonicalize", text),
+        accepted=True,
+        output='"test.cond_br"(%arg0, %arg1)[^bb1, ^bb2] : (i1, i64) -> ()\n  ^bb1:',
+    )
+    expect(
+        "with region-simplify=disabled the argument stays",
+        run(*flags, "--canonicalize=region-simplify=disabled", text),
+        accepted=True,
+        output="^bb1(%0: i64):",
+    )
+    expect(
+        "--cse leaves it alone",
+        run(*flags, "--cse", text),
+        accepted=True,
+        output="^bb1(%0: i64):",
+    )
+
+
+def runtime_rewrite() -> None:
+    rule("13. A PDL rewrite runs at run time, through the transform interpreter")
+    # No C++: mlir-opt loads a PDL pattern in a transform script, and
+    # transform.pdl_match runs the pattern's rewrite section, not only its
+    # match. The paper's RQ5 uses it to rewrite x + 0 to x in an exported
+    # kernel and import the result. It works by accident of the
+    # implementation: pdl_match returns a handle to the operations the
+    # rewrite erased, and using the handle crashes the interpreter.
+    irdl = write(
+        "rewrite.irdl.mlir",
+        """
+irdl.dialect @kirin_py_constant {
+  irdl.operation @constant {
+    %a = irdl.any
+    irdl.attributes {"value" = %a}
+    %r = irdl.any
+    irdl.results(result: %r)
+  }
+}
+irdl.dialect @kirin_py_binop {
+  irdl.operation @add {
+    %l = irdl.any
+    %r = irdl.any
+    irdl.operands(lhs: %l, rhs: %r)
+    %o = irdl.any
+    irdl.results(result: %o)
+  }
+}
+""",
+    )
+    payload = write(
+        "rewrite.mlir",
+        """"test.func"() ({
+^bb0(%x: i64):
+  %0 = "kirin_py_constant.constant"() {value = 0 : i64} : () -> i64
+  %1 = "kirin_py_binop.add"(%x, %0) : (i64, i64) -> i64
+  "test.return"(%1) : (i64) -> ()
+}) : () -> ()
+""",
+    )
+    script = """module attributes {{transform.with_named_sequence}} {{
+  transform.named_sequence @__transform_main(%root: !transform.any_op {{transform.readonly}}) {{
+    transform.with_pdl_patterns %root : !transform.any_op {{
+    ^bb0(%arg0: !transform.any_op):
+      pdl.pattern @add_zero : benefit(1) {{
+        %zero = pdl.attribute = 0 : i64
+        %t = pdl.type
+        %c = pdl.operation "kirin_py_constant.constant" {{"value" = %zero}} -> (%t : !pdl.type)
+        %cv = pdl.result 0 of %c
+        %x = pdl.operand
+        %t2 = pdl.type
+        %add = pdl.operation "kirin_py_binop.add"(%x, %cv : !pdl.value, !pdl.value) -> (%t2 : !pdl.type)
+        pdl.rewrite %add {{
+          pdl.replace %add with (%x : !pdl.value)
+        }}
+      }}
+      transform.sequence %arg0 : !transform.any_op failures(propagate) {{
+      ^bb1(%arg1: !transform.any_op):
+        %m = transform.pdl_match @add_zero in %arg1 : (!transform.any_op) -> !transform.any_op
+        {use}
+      }}
+    }}
+    transform.yield
+  }}
+}}
+"""
+    flags = (f"--irdl-file={irdl}", "--allow-unregistered-dialect")
+
+    def interpret(name: str, use: str) -> subprocess.CompletedProcess:
+        library = write(name, script.format(use=use))
+        return run(
+            *flags,
+            f"--transform-preload-library=transform-library-paths={library}",
+            "--transform-interpreter",
+            payload,
+        )
+
+    result = interpret("rewrite.transform.mlir", "")
+    title = "pdl_match applies the rewrite: x + 0 becomes x, the dead 0 stays"
+    ok = (
+        result.returncode == 0
+        and "kirin_py_binop.add" not in result.stdout
+        and '"test.return"(%arg0)' in result.stdout
+        and "kirin_py_constant.constant" in result.stdout
+    )
+    seen = "rewritten" if ok else f"exit {result.returncode}: {first_error(result)}"
+    print(f"  [{'ok' if ok else 'CHANGED'}] {title}\n           {seen}")
+    if not ok:
+        FAILURES.append(title)
+    expect(
+        "using the handle to the erased operation crashes the interpreter",
+        interpret(
+            "rewrite-use.transform.mlir",
+            'transform.debug.emit_remark_at %m, "matched" : !transform.any_op',
+        ),
+        accepted=False,
+    )
+
+
 def main() -> None:
     print(f"mlir-opt: {MLIR_OPT}")
     print(run("--version").stdout.strip().splitlines()[0])
@@ -708,6 +859,8 @@ def main() -> None:
     properties()
     locations()
     variadic_binding()
+    unregistered_branch()
+    runtime_rewrite()
     rule("Result")
     if FAILURES:
         print(

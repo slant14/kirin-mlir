@@ -34,10 +34,12 @@ definition, and a use whose type differs from the definition's are refused.
 numbers them. Every block of a region exists before any of its operations is
 read, so a successor may name a block that comes later.
 
-**One exception.** A statement class may register a hook through
-:func:`register_statement_import` for what the generic path cannot rebuild.
-Kirin ``func.func`` is the one: its ``%self`` argument was dropped on the way
-out, and :mod:`kirin_mlir.dialects.func` puts it back.
+**Hooks.** A statement class may register a hook through
+:func:`register_statement_import` for what the generic path cannot rebuild
+or check. Kirin ``func.func``'s ``%self`` argument was dropped on the way
+out, and :mod:`kirin_mlir.dialects.func` puts it back; the ``cf`` branches
+check what they pass; and ``func.func``, ``scf.for`` and ``scf.if`` refuse a
+block without a terminator (:func:`require_terminators`).
 
 **Kernels.** :func:`import_mlir` makes each top-level ``func.func`` a Kirin
 ``Method``, the entry first, as the exporter writes them. A kernel may refer
@@ -237,9 +239,23 @@ class MLIRImporter:
             )
             result_types = list(map(import_type, op.result_types))
             schema = fields(cls)
-            _check_count("result", len(schema.results), len(result_types))
-            _check_count("region", len(schema.regions), len(regions))
-            _check_count("successor", len(schema.blocks), len(successors))
+            # A terminator's fields declare its whole shape too, whoever wrote
+            # its __init__: it ends a block, and Kirin's lowering never gives
+            # one a result or a region. The paper's fault injection found
+            # func.return and scf.yield taking any number of results.
+            exact = fields_declare_shape(cls) or cls.has_trait(ir.IsTerminator)
+            _check_count("result", len(schema.results), len(result_types), exact)
+            _check_count("region", len(schema.regions), len(regions), exact)
+            _check_count("successor", len(schema.blocks), len(successors), exact)
+            missing = schema.attributes.keys() - entries.keys()
+            if missing:
+                # IRDL refuses the same for a registered dialect; the exporter
+                # writes every declared attribute (docs/assessment.md,
+                # 2026-10-12), so the text was not written by it.
+                raise MLIRImportError(
+                    f"the statement declares the attribute(s) {sorted(missing)}, "
+                    "and the operation does not have them"
+                )
 
             stmt = cls.__new__(cls)
             ir.Statement.__init__(
@@ -265,7 +281,12 @@ class MLIRImporter:
     # -- regions and blocks ---------------------------------------------------
 
     def region(self, region: parse.Region) -> ir.Region:
-        """A region, its blocks made first so a successor may name a later one."""
+        """A region, its blocks and their arguments made before any operation.
+
+        So a successor may name a later block, and a branch's hook can check
+        what it passes against the arguments of a block not yet read, as an
+        MLIR block's header exists before the operations that branch to it.
+        """
         blocks = [ir.Block() for _ in region.blocks]
         labels: dict[str, ir.Block] = {}
         for parsed, block in zip(region.blocks, blocks):
@@ -286,6 +307,7 @@ class MLIRImporter:
                 except MLIRImportError as err:
                     raise err.at(parsed.line)
                 self.define(name, argument, parsed.line)
+        for parsed, block in zip(region.blocks, blocks):
             for op in parsed.operations:
                 block.stmts.append(self.statement(op))
         self._close(scope)
@@ -410,7 +432,12 @@ def arguments_slice(
         )
     elif not arguments:
         # Statements such as py.tuple.new declare no argument field and take
-        # every operand; Kirin then records no slice.
+        # every operand; Kirin then records no slice. A statement whose
+        # fields declare its whole shape takes none.
+        if count and fields_declare_shape(cls):
+            raise MLIRImportError(
+                f"the statement declares no operands, and the operation has {count}"
+            )
         return {}
     elif groups == 0:
         sizes = [1] * len(arguments)
@@ -447,14 +474,50 @@ def _check_type(
         )
 
 
-def _check_count(what: str, declared: int, found: int) -> None:
+def fields_declare_shape(cls: type[ir.Statement]) -> bool:
+    """Whether ``cls``'s fields declare everything it can have.
+
+    True when Kirin generated its ``__init__`` (compiled from a string), which
+    builds exactly the fields. A hand-written one may build more, as
+    ``py.tuple.new`` does its operands. :mod:`kirin_mlir.irdl` reads the same
+    signal, so the import holds a statement to the shape its generated IRDL
+    declares, whether or not IRDL can register its dialect.
+    """
+    code = getattr(cls.__init__, "__code__", None)
+    return getattr(code, "co_filename", None) == "<string>"
+
+
+def require_terminators(node: ir.Statement) -> None:
+    """Refuse a block of ``node``'s regions that does not end in a terminator.
+
+    A hook's check, for a statement whose every block Kirin's lowering ends
+    with one: ``func.func``, ``scf.for`` and ``scf.if``. Nothing else checks
+    it. MLIR requires a block to end in an operation that *might* be a
+    terminator, and an unregistered one might; Kirin's verifier never asks;
+    and Kirin's interpreter, reaching the end of such a block, runs it again
+    without end. It cannot be read off a trait: stim's ``REPEAT`` has Kirin's
+    ``SSACFG`` trait, as these do, and a body with no terminator by
+    construction.
+    """
+    for region in node.regions:
+        for block in region.blocks:
+            last = block.last_stmt
+            if last is None or not last.has_trait(ir.IsTerminator):
+                ends = "nothing" if last is None else f"{last.dialect.name}.{last.name}"
+                raise MLIRImportError(
+                    f"a block of {node.dialect.name}.{node.name} ends with "
+                    f"{ends}; Kirin ends every block of one with a terminator"
+                )
+
+
+def _check_count(what: str, declared: int, found: int, exact: bool = False) -> None:
     """Refuse ``found`` results, regions or successors where fields declare others.
 
-    Only where the statement declares some: a hand-written ``__init__`` may
-    give a statement what no field declares, as ``py.tuple.new`` does its
-    operands.
+    Where the statement declares none, only if ``exact``
+    (:func:`fields_declare_shape`): a hand-written ``__init__`` may give a
+    statement what no field declares.
     """
-    if declared and found != declared:
+    if (declared or exact) and found != declared:
         raise MLIRImportError(
             f"the statement declares {declared} {what}(s), and the operation "
             f"has {found}"

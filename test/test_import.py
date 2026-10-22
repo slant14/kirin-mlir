@@ -45,7 +45,7 @@ from test_irdl import CORPUS
 from kirin.decl import info, statement
 from test_parse import PAYLOADS, generic, canonical, operations
 from kirin.prelude import basic
-from kirin.dialects import py, func, ilist
+from kirin.dialects import cf, py, scf, func, ilist
 from kirin.ir.attrs.types import (
     Union,
     Vararg,
@@ -573,9 +573,18 @@ def test_every_kernel_is_rebuilt_as_its_prepared_copy(kernel, write):
     assert_rebuilt(module, rebuilt(module, write(emit_mlir(module))))
 
 
-def test_func_func_is_the_one_statement_with_an_import_hook():
-    """The import's one exception, as ``func.func`` is the emitter's."""
-    assert STATEMENT_IMPORTS.keys() == {func.Function}
+def test_the_import_hooks_are_func_func_scf_and_the_cf_branches():
+    """``func.func`` puts ``%self`` back, as the emitter dropped it; it and
+    the two ``scf`` statements with bodies refuse a block without a
+    terminator; the two ``cf`` branches check what they pass against the
+    block they name. Stim's ``REPEAT`` has none: its body has no terminator."""
+    assert STATEMENT_IMPORTS.keys() == {
+        func.Function,
+        scf.For,
+        scf.IfElse,
+        cf.Branch,
+        cf.ConditionalBranch,
+    }
 
 
 # -- step 4: hand-written modules ---------------------------------------------
@@ -678,6 +687,11 @@ def test_operand_groups_follow_operand_segment_sizes():
 INT3 = f"({INT}, {INT}, {INT})"
 #: Each case: the module's lines, what the refusal says, and the line it names.
 REFUSALS = {
+    "operand where the fields declare none": (
+        [CONSTANT, '%n = "kirin_func.const_none"(%c) : (' + INT + ") -> !kirin.any"],
+        "declares no operands, and the operation has 1",
+        3,
+    ),
     "use without definition": ([add("%c", "%c")], "%c is used but never defined", 2),
     "definition twice": ([CONSTANT, CONSTANT], "defined twice", 3),
     "use of another type": (
@@ -916,6 +930,122 @@ def test_a_module_that_is_not_kernels_is_refused(edit, fragment, reason):
     with pytest.raises(MLIRImportError, match=reason) as caught:
         import_mlir(text, test_emit.branches.dialects)
     assert caught.value.line == _line_of(text, fragment)
+
+
+def _extra_result(op: str):
+    """The first ``op`` in the text, given a result it does not declare."""
+
+    def edit(text: str) -> str:
+        head, tail = text.split(f'"{op}"', 1)
+        line, rest = tail.split("\n", 1)
+        line = line.replace("-> ()", "-> (!kirin.any)")
+        return f'{head}%extra = "{op}"{line}\n{rest}'
+
+    return edit
+
+
+_extra_branch_result = _extra_result("kirin_cf.cond_br")
+
+
+@pytest.mark.parametrize(
+    "edit, fragment, reason",
+    [
+        (
+            lambda text: text.replace(
+                "callee = @callee, purity = true", "callee = @callee"
+            ),
+            "kirin_func.invoke",
+            r"declares the attribute\(s\) \['purity'\]",
+        ),
+        (_extra_branch_result, "kirin_cf.cond_br", "declares 0 result"),
+        (
+            _extra_result("kirin_func.return"),
+            '%extra = "kirin_func.return"',
+            "declares 0 result",
+        ),
+    ],
+    ids=[
+        "declared attribute missing",
+        "result its fields do not declare",
+        "result on a terminator with a hand-written __init__",
+    ],
+)
+def test_control_flow_is_held_to_the_shape_its_irdl_would_declare(
+    edit, fragment, reason
+):
+    """Found by the paper's fault injection: IRDL checks these on a registered
+    dialect, and Kirin ``func`` and ``cf`` are not registered, so the import
+    now checks them itself."""
+    text = edit(_branches_text())
+    with pytest.raises(MLIRImportError, match=reason) as caught:
+        import_mlir(text, test_emit.branches.dialects)
+    assert caught.value.line == _line_of(text, fragment)
+
+
+def _drop_bb1_argument(text: str) -> str:
+    """``^bb1`` without its argument, the branch to it unchanged."""
+    head, tail = text.split("^bb1(", 1)
+    return head + "^bb1:" + tail.split("):", 1)[1]
+
+
+def test_a_branch_passing_a_block_more_values_than_it_takes_is_refused():
+    text = _drop_bb1_argument(_branches_text())
+    with pytest.raises(
+        MLIRImportError, match="passes 1 value.*which takes 0"
+    ) as caught:
+        import_mlir(text, test_emit.branches.dialects)
+    assert caught.value.line == _line_of(text, "kirin_cf.cond_br")
+
+
+def _without_first(text: str, fragment: str) -> str:
+    """``text`` without the first line holding ``fragment``."""
+    lines = text.splitlines()
+    first = next(n for n, line in enumerate(lines) if fragment in line)
+    return "\n".join(lines[:first] + lines[first + 1 :]) + "\n"
+
+
+@pytest.mark.parametrize(
+    "kernel, terminator, owner, ends",
+    [
+        (
+            test_emit.branches,
+            "kirin_func.return",
+            '%0 = "kirin_func.func"',
+            "func.invoke",
+        ),
+        (
+            test_emit.structured_for,
+            "kirin_scf.yield",
+            '"kirin_scf.for"',
+            "py.binop.add",
+        ),
+        (test_emit.structured_if, "kirin_scf.yield", '"kirin_scf.if"', "py.binop.add"),
+    ],
+    ids=["func.func", "scf.for", "scf.if"],
+)
+def test_a_block_without_its_terminator_is_refused(kernel, terminator, owner, ends):
+    """Found by the paper's fault injection. MLIR accepts the text, since an
+    unregistered operation might be a terminator, and so does Kirin's
+    verifier; Kirin's interpreter runs such a block again without end."""
+    text = _without_first(emit_mlir(prepare_for_mlir(kernel)), terminator)
+    with pytest.raises(MLIRImportError, match=f"ends with {ends};") as caught:
+        import_mlir(text, kernel.dialects)
+    assert caught.value.line == _line_of(text, owner)
+
+
+@needs_mlir
+def test_what_canonicalize_does_to_an_unregistered_branch_is_refused():
+    """MLIR 23's region simplification erases ``^bb1``'s unused argument and
+    leaves the unregistered ``cond_br`` passing it a value
+    (``scripts/probe_mlir_irdl.py``, section 12). Imported, the kernel would
+    fail when the branch is taken."""
+    text = generic(_branches_text(), "--canonicalize")
+    assert "^bb1:" in text
+    with pytest.raises(MLIRImportError, match="passes 1 value"):
+        import_mlir(text, test_emit.branches.dialects)
+    kept = generic(_branches_text(), "--canonicalize=region-simplify=disabled")
+    imported = import_mlir(kept, test_emit.branches.dialects)
+    assert all(imported.entry(x, 1) == test_emit.branches(x, 1) for x in INPUTS)
 
 
 def test_a_dialect_group_missing_a_dialect_is_refused():

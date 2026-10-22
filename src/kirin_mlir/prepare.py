@@ -94,9 +94,12 @@ class PreparedModule:
 def prepare_for_mlir(method: ir.Method) -> PreparedModule:
     """Gather, copy, promote and type every kernel ``method`` reaches.
 
+    Two different kernels with one name are given distinct symbols in their
+    copies (:func:`_unique_symbols`).
+
     Raises:
         MLIRExportError: if a kernel holds a closure over run-time values, or
-            two kernels in the module share a symbol name.
+            has no symbol name.
     """
     sources: list[ir.Method] = []
     methods: list[ir.Method] = []
@@ -110,7 +113,7 @@ def prepare_for_mlir(method: ir.Method) -> PreparedModule:
         methods.append(prepared)
         pending.extend(_reachable(prepared))
 
-    _check_symbols(methods)
+    _unique_symbols(methods)
     return PreparedModule(tuple(methods), tuple(sources))
 
 
@@ -159,8 +162,20 @@ def _reachable(method: ir.Method) -> Iterator[ir.Method]:
                 yield payload.data
 
 
-def _check_symbols(methods: list[ir.Method]) -> None:
-    owners: dict[str, ir.Method] = {}
+def _unique_symbols(methods: list[ir.Method]) -> None:
+    """Give every kernel in the module its own symbol, renaming copies if needed.
+
+    Kirin lets two different kernels share a name, and squin's standard
+    library does: ``squin.h`` calls ``squin.broadcast.h``. MLIR resolves calls
+    by symbol within a module, so the second gets ``_1``, the next ``_2``, as
+    MLIR's own ``SymbolTable::insert`` renames a clashing symbol (issue 03,
+    decided 2026-10-19). Only the prepared copies are renamed, never the
+    kernels the caller holds, so the round trip stays against the copies, and
+    the entry kernel, found first, keeps its name. Renaming a symbol never
+    changes what a program computes.
+    """
+    taken = {method.sym_name for method in methods}
+    owners: set[str] = set()
     for method in methods:
         name = method.sym_name
         if not name:
@@ -169,9 +184,20 @@ def _check_symbols(methods: list[ir.Method]) -> None:
                 "call it"
             )
         if name in owners:
-            raise MLIRExportError(
-                f"two different kernels in the module are both named {name!r}; "
-                "MLIR resolves calls by symbol within a module, so they cannot "
-                "both be exported. Rename one of them"
-            )
-        owners[name] = method
+            suffix = 1
+            while f"{name}_{suffix}" in taken:
+                suffix += 1
+            renamed = f"{name}_{suffix}"
+            taken.add(renamed)
+            _rename(method, renamed)
+            name = renamed
+        owners.add(name)
+
+
+def _rename(method: ir.Method, name: str) -> None:
+    """``method`` and its ``func.func`` called ``name``, ``%self``'s hint too."""
+    self_arg = method.callable_region.blocks[0].args[0]
+    if self_arg.name == f"{method.sym_name}_self":
+        self_arg.name = f"{name}_self"
+    method.sym_name = name
+    method.code.sym_name = name

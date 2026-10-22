@@ -12,7 +12,9 @@ the registration is in place before anything is emitted.
     the ``signature`` attribute. That is only sound if nothing reads it, so a
     function that still reads ``%self`` is refused here, by name, rather than
     reaching ``mlir-opt`` as an undeclared value. The import puts it back
-    (:func:`restore_self`), read off the signature.
+    (:func:`restore_self`), read off the signature, after refusing a block
+    that does not end in a terminator, as :mod:`kirin_mlir.dialects.scf`
+    does.
 
 ``func.lambda`` is refused
     A closure reads its captures through its own ``%self``.
@@ -38,7 +40,7 @@ from .. import parse
 from ..attrs import register_attribute, register_attribute_import
 from ..types import emit_type, import_type
 from ..errors import MLIRExportError, MLIRImportError
-from ..import_ import register_statement_import
+from ..import_ import require_terminators, register_statement_import
 
 if TYPE_CHECKING:
     from ..emit import EmitMLIR, MLIRFrame
@@ -80,6 +82,7 @@ def restore_self(node: func.Function) -> None:
     not ``%self``; the text records only the signature (issue 06,
     decision 9).
     """
+    require_terminators(node)
     blocks = node.body.blocks
     if not blocks:
         raise MLIRImportError(
